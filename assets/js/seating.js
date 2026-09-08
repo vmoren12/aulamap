@@ -195,7 +195,8 @@ function renderDesks() {
   container.style.width = (maxX + 40) + 'px';
   container.style.height = (maxY + 40) + 'px';
 
-  const { deskDots } = relationVisuals(data);
+  const evaluation = evaluateRelations(data);
+  const deskDots = relationDots(data, evaluation);
   drawRelationLines(data);
   el('relationSvg').setAttribute('width', maxX + 40);
   el('relationSvg').setAttribute('height', maxY + 40);
@@ -226,12 +227,12 @@ function renderDesks() {
   container.querySelectorAll('.desk').forEach(node => node.remove());
   container.insertAdjacentHTML('beforeend', html);
   el('deskCountLabel').textContent = `Pupitres: ${data.desks.length}`;
-  renderRelationScore();
+  renderRelationScore(evaluation);
 }
 
-/** Línies entre alumnes relacionats que seuen a prop. */
+/** Dibuixa les línies entre alumnes relacionats que seuen a tocar. */
 function drawRelationLines(data) {
-  const { lines } = relationVisuals(data);
+  const lines = relationLines(data);
   const deskById = new Map(data.desks.map(d => [d.id, d]));
   const drawn = new Set();
   let svg = '';

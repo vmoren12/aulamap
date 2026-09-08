@@ -159,36 +159,41 @@ function connectedComponents(studentIds, deskOf, graph) {
 }
 
 /**
- * Elements visuals del llenç: línies entre alumnes relacionats i punts d'avís.
+ * Línies entre alumnes relacionats que seuen a tocar.
+ * És l'única part que cal recalcular mentre s'arrossega un pupitre.
  */
-function relationVisuals(data) {
+function relationLines(data) {
   const graph = buildNeighborGraph(data.desks);
   const deskOf = buildStudentDeskMap(data);
   const lines = [];
-  const deskDots = {};
-  const addDot = (deskId, kind) => { (deskDots[deskId] = deskDots[deskId] || []).push(kind); };
-
   data.relations.forEach(rel => {
     const seated = rel.students.filter(id => deskOf[id]);
     for (let i = 0; i < seated.length; i++) {
       for (let j = i + 1; j < seated.length; j++) {
         const deskA = deskOf[seated[i]], deskB = deskOf[seated[j]];
-        const near = areNeighbors(deskA, deskB, graph);
-        if (rel.type === REL_TOGETHER && near) lines.push({ deskA, deskB, kind: 'good' });
-        if (rel.type === REL_SEPARATE && near) lines.push({ deskA, deskB, kind: 'bad' });
+        if (!areNeighbors(deskA, deskB, graph)) continue;
+        lines.push({ deskA, deskB, kind: rel.type === REL_TOGETHER ? 'good' : 'bad' });
       }
     }
   });
+  return lines;
+}
 
-  evaluateRelations(data).results.forEach(result => {
-    const rel = data.relations.find(r => r.id === result.id);
-    if (!rel) return;
+/** Punts d'estat que es pinten sota cada pupitre. */
+function relationDots(data, evaluation) {
+  const deskOf = buildStudentDeskMap(data);
+  const dots = {};
+  (evaluation || evaluateRelations(data)).results.forEach(result => {
     const kind = result.status === 'sat' ? 'good' : result.status === 'viol' ? 'bad' : null;
     if (!kind) return;
-    rel.students.forEach(id => { if (deskOf[id]) addDot(deskOf[id], kind); });
+    const rel = data.relations.find(r => r.id === result.id);
+    if (!rel) return;
+    rel.students.forEach(id => {
+      const deskId = deskOf[id];
+      if (deskId) (dots[deskId] = dots[deskId] || []).push(kind);
+    });
   });
-
-  return { lines, deskDots };
+  return dots;
 }
 
 /* ── Panell de relacions ─────────────────────────────── */
