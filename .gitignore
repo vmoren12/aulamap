@@ -1,0 +1,15 @@
+# Còpies locals i notes que no es publiquen
+_backup/
+MILLORES.md
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+# Dependències (el projecte no en fa servir)
+node_modules/

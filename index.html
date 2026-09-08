@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AulaMap — Planificador de distribució d'aula</title>
+<meta name="description" content="Eina per planificar la distribució de l'aula i formar equips de treball, amb relacions d'ajuntar i separar entre alumnes.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="assets/img/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/sidebar.css">
+<link rel="stylesheet" href="assets/css/canvas.css">
+<link rel="stylesheet" href="assets/css/teams.css">
+<link rel="stylesheet" href="assets/css/responsive.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-logo">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="28" height="28" rx="6" fill="#6C8EEF" opacity="0.15"/>
+      <rect x="6" y="10" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
+      <rect x="18" y="10" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
+      <rect x="6" y="20" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
+      <rect x="18" y="20" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
+      <rect x="10" y="3" width="12" height="4" rx="1.5" fill="#6C8EEF" opacity="0.5"/>
+    </svg>
+    <h1>Aula<span>Map</span></h1>
+  </div>
+</header>
+
+<div class="docent-bar">
+  <span class="lbl"><span class="mi mi-xs">account_circle</span> Perfil:</span>
+  <select id="docentSelect" onchange="switchDocent()" aria-label="Grup"></select>
+  <button class="btn btn-sm" onclick="showEditDocent()" title="Editar nom del grup"><span class="mi mi-xs">edit</span></button>
+  <button class="btn btn-sm" onclick="showAddDocent()" title="Nou grup"><span class="mi mi-xs">person_add</span></button>
+  <button class="btn btn-sm btn-danger" onclick="removeDocent()" title="Eliminar grup"><span class="mi mi-xs">person_remove</span></button>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:5px;position:relative;">
+    <button class="btn btn-icon btn-sm" id="undoBtn" onclick="undo()" disabled title="Desfer (Ctrl+Z)"><span class="mi mi-sm">undo</span></button>
+    <button class="btn btn-icon btn-sm" id="redoBtn" onclick="redo()" disabled title="Refer (Ctrl+Y)"><span class="mi mi-sm">redo</span></button>
+    <button class="btn btn-icon btn-sm" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="Menú"><span class="mi">more_vert</span></button>
+    <input type="file" id="fileInput" accept=".json,.aulamap" style="display:none" onchange="handleFileLoad(event)">
+    <div class="header-dropdown" id="headerDropdown">
+      <button class="header-dropdown-item" onclick="exportPDF();closeHeaderMenu()"><span class="mi">picture_as_pdf</span> Exportar PDF</button>
+      <button class="header-dropdown-item" onclick="saveToFile();closeHeaderMenu()"><span class="mi">save</span> Desar fitxer</button>
+      <button class="header-dropdown-item" onclick="loadFromFile();closeHeaderMenu()"><span class="mi">folder_open</span> Carregar fitxer</button>
+      <div class="header-dropdown-sep"></div>
+      <button class="header-dropdown-item" onclick="showAddConfig();closeHeaderMenu()"><span class="mi">note_add</span> Nova configuració</button>
+      <button class="header-dropdown-item" onclick="showEditConfig();closeHeaderMenu()"><span class="mi">edit_note</span> Reanomenar configuració</button>
+      <button class="header-dropdown-item" onclick="removeConfig();closeHeaderMenu()"><span class="mi">delete_sweep</span> Eliminar configuració</button>
+      <div class="header-dropdown-sep"></div>
+      <button class="header-dropdown-item danger" onclick="confirmClearAll();closeHeaderMenu()"><span class="mi">delete_forever</span> Netejar tot</button>
+    </div>
+  </div>
+  <select id="configSelect" onchange="switchConfig()" aria-label="Configuració" title="Configuració"></select>
+</div>
+
+<div class="app-body">
+  <aside class="sidebar" id="sidebarPanel">
+    <button class="sidebar-close-btn" onclick="closeMobileSidebar()" aria-label="Tancar"><span class="mi">close</span></button>
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" data-tab="info" onclick="switchTab('info')">Info</div>
+      <div class="sidebar-tab" data-tab="alumnes" onclick="switchTab('alumnes')">Alumnes</div>
+      <div class="sidebar-tab" data-tab="relacions" onclick="switchTab('relacions')">Relacions</div>
+      <div class="sidebar-tab" data-tab="layout" onclick="switchTab('layout')">Disseny</div>
+      <div class="sidebar-tab" data-tab="equips" onclick="switchTab('equips')" style="background-color:var(--orange-bg);color:var(--orange);"><span class="mi mi-xs" style="font-size:11px">groups</span> Equips</div>
+    </div>
+
+    <div class="sidebar-content">
+      <!-- INFO -->
+      <div class="sidebar-panel active" id="panel-info">
+        <div class="field"><label for="centreName">Centre</label>
+          <input type="text" id="centreName" placeholder="Institut Sabadell" oninput="updateInfoField('centreName',this.value)"></div>
+        <div class="field-row">
+          <div class="field"><label for="curs">Curs</label>
+            <input type="text" id="curs" placeholder="2025-2026" oninput="updateInfoField('curs',this.value)"></div>
+          <div class="field"><label for="nivell">Nivell / Grup</label>
+            <input type="text" id="nivell" placeholder="PFI Informàtica" oninput="updateInfoField('nivell',this.value)"></div>
+        </div>
+        <div class="field"><label for="aula">Aula</label>
+          <input type="text" id="aula" placeholder="Aula 201" oninput="updateInfoField('aula',this.value)"></div>
+        <div class="field-row">
+          <div class="field"><label for="numAlumnes">Alumnes</label><input type="number" id="numAlumnes" value="0" readonly style="opacity:0.5"></div>
+          <div class="field"><label for="numSeated">Assignats</label><input type="number" id="numSeated" value="0" readonly style="opacity:0.5"></div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="text-align:center;padding:12px 0 4px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);margin-top:12px;">
+          Aplicació desenvolupada per <strong style="color:var(--text2)">Víctor Mariano Moreno de la Torre</strong> amb IA.<br>
+          Llicència <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.ca" target="_blank" rel="noopener" style="color:var(--text2);text-decoration:none;">Creative Commons BY-SA 4.0</a>
+        </div>
+      </div>
+
+      <!-- ALUMNES -->
+      <div class="sidebar-panel" id="panel-alumnes">
+        <div class="add-form" style="flex-shrink:0;">
+          <input type="text" id="newStudentName" placeholder="Nom de l'alumne/a..." onkeydown="if(event.key==='Enter')addStudent()">
+          <button class="btn btn-primary btn-sm" onclick="addStudent()" title="Afegir"><span class="mi mi-xs">add</span></button>
+        </div>
+        <div class="field" style="margin-bottom:6px;flex-shrink:0;">
+          <input type="text" id="studentSearch" placeholder="Cerca..." oninput="renderStudentList()" style="font-size:11px;padding:5px 8px">
+        </div>
+        <div id="studentList" style="flex:1;overflow-y:auto;min-height:0;"></div>
+        <div id="studentCount" style="text-align:center;font-size:10px;color:var(--text3);padding:4px 0;flex-shrink:0;"></div>
+        <div style="display:flex;gap:5px;margin-top:8px;flex-shrink:0;">
+          <button class="btn btn-sm" onclick="showBulkAdd()" style="flex:1"><span class="mi mi-xs">group_add</span> Afegir múltiples</button>
+          <button class="btn btn-sm" onclick="showImportFromProfile()" style="flex:1"><span class="mi mi-xs">people</span> Importar d'un perfil</button>
+        </div>
+      </div>
+
+      <!-- RELACIONS -->
+      <div class="sidebar-panel" id="panel-relacions">
+        <div class="panel-hint">
+          Crea conjunts d'alumnes per <b class="together">ajuntar</b> (que seguin junts) o per
+          <b class="separate">separar</b> (que no seguin a prop). Pots afegir-hi diversos alumnes de cop.
+        </div>
+        <div class="cset-cols">
+          <div class="cset-col">
+            <div class="cset-title together"><span class="mi">link</span> Ajuntar</div>
+            <div id="relTogetherSets"></div>
+            <div class="cset-actions">
+              <button class="btn btn-sm" onclick="relAddSet('together')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
+              <button class="btn btn-sm" onclick="relAddSetWithStudents('together')" title="Triar diversos alumnes"><span class="mi mi-xs">group_add</span> Grup</button>
+            </div>
+          </div>
+          <div class="cset-col">
+            <div class="cset-title separate"><span class="mi">link_off</span> Separar</div>
+            <div id="relSeparateSets"></div>
+            <div class="cset-actions">
+              <button class="btn btn-sm" onclick="relAddSet('separate')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
+              <button class="btn btn-sm" onclick="relAddSetWithStudents('separate')" title="Triar diversos alumnes"><span class="mi mi-xs">group_add</span> Grup</button>
+            </div>
+          </div>
+        </div>
+        <div id="relScoreSummary" style="margin-top:12px"></div>
+      </div>
+
+      <!-- DISSENY -->
+      <div class="sidebar-panel" id="panel-layout">
+        <div class="field"><label>Plantilla</label></div>
+        <div class="layout-grid" id="layoutGrid"></div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+        <div class="field-row">
+          <div class="field"><label for="layoutRows">Files</label><input type="number" id="layoutRows" min="1" max="10" value="4" onchange="applyCustomLayout()"></div>
+          <div class="field"><label for="layoutCols">Columnes</label><input type="number" id="layoutCols" min="1" max="10" value="5" onchange="applyCustomLayout()"></div>
+        </div>
+        <div class="field"><label for="layoutSpacing">Espaiat (<span id="spacingValue">20</span> px)</label>
+          <input type="range" id="layoutSpacing" min="8" max="50" value="20" oninput="updateSpacingLabel(this.value)" onchange="applyCustomLayout()" style="width:100%"></div>
+        <button class="btn btn-sm" onclick="applyCustomLayout()" style="width:100%;margin-top:4px"><span class="mi mi-xs">grid_view</span> Aplicar</button>
+        <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
+        <div class="field"><label>Distribució lliure</label></div>
+        <button class="btn btn-sm" onclick="addFreeDesk()" style="width:100%;margin-bottom:6px"><span class="mi mi-xs">add_circle</span> Afegir pupitre</button>
+      </div>
+
+      <!-- EQUIPS -->
+      <div class="sidebar-panel" id="panel-equips">
+        <div id="savedTeamsStrip" class="eq-saved-strip" style="display:none;">
+          <div class="eq-saved-title"><span class="mi mi-xs">bookmark</span> Equips desats</div>
+          <div class="eq-saved-scroll" id="savedTeamsScroll"></div>
+        </div>
+        <div class="panel-hint">Forma equips de treball amb els alumnes registrats.</div>
+
+        <div class="equips-section">
+          <div class="equips-section-title"><span class="mi mi-xs">tune</span> Configuració</div>
+          <div class="equips-config-row">
+            <div class="field"><label for="teamSize">Alumnes per equip</label>
+              <input type="number" id="teamSize" min="1" value="2" onchange="setTeamSize(this.value)"></div>
+            <div class="field"><label for="teamCount">Nombre d'equips</label>
+              <input type="number" id="teamCount" value="0" readonly style="opacity:0.5"></div>
+          </div>
+          <div id="teamRemainderOption" style="display:none;"></div>
+        </div>
+
+        <div class="equips-section">
+          <label class="equips-toggle">
+            <input type="checkbox" id="teamUseCompetency" onchange="toggleUseCompetency()">
+            <span>Nivell de competència</span>
+          </label>
+          <div id="teamCompetencySection" style="display:none;max-height:200px;overflow-y:auto;">
+            <table class="equips-comp-table">
+              <thead><tr><th>Alumne</th><th>Nivell</th></tr></thead>
+              <tbody id="teamCompetencyBody"></tbody>
+            </table>
+          </div>
+          <label class="equips-toggle" style="margin-top:4px;">
+            <input type="checkbox" id="teamHeterogeneous" disabled onchange="toggleHeterogeneous()">
+            <span>Equips heterogenis</span>
+          </label>
+        </div>
+
+        <div class="equips-section">
+          <div class="equips-section-title" style="justify-content:space-between;">
+            <span style="display:flex;align-items:center;gap:5px;"><span class="mi mi-xs">rule</span> Restriccions</span>
+            <button class="btn btn-sm" onclick="copyRelationsToTeams()" title="Importar els conjunts del panell Relacions"><span class="mi mi-xs">content_copy</span> Copiar de Relacions</button>
+          </div>
+          <div id="teamWarning" class="eq-warning" style="display:none;"></div>
+          <div class="cset-cols">
+            <div class="cset-col">
+              <div class="cset-title together"><span class="mi">link</span> Ajuntar</div>
+              <div id="teamTogetherSets"></div>
+              <div class="cset-actions">
+                <button class="btn btn-sm" onclick="teamAddSet('together')"><span class="mi mi-xs">add</span> Conjunt</button>
+                <button class="btn btn-sm" onclick="teamAddSetWithStudents('together')"><span class="mi mi-xs">group_add</span> Grup</button>
+              </div>
+            </div>
+            <div class="cset-col">
+              <div class="cset-title separate"><span class="mi">link_off</span> Separar</div>
+              <div id="teamSeparateSets"></div>
+              <div class="cset-actions">
+                <button class="btn btn-sm" onclick="teamAddSet('separate')"><span class="mi mi-xs">add</span> Conjunt</button>
+                <button class="btn btn-sm" onclick="teamAddSetWithStudents('separate')"><span class="mi mi-xs">group_add</span> Grup</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn" id="teamCreateBtn" onclick="createTeams()" style="width:100%;margin-top:6px;background:var(--orange);border-color:var(--orange);color:#000;" disabled>
+          <span class="mi mi-xs">groups</span> Formar equips
+        </button>
+        <div id="teamResults" class="eq-results"></div>
+        <div id="teamExportRow" class="eq-export-row" style="display:none;">
+          <button class="btn btn-sm" onclick="exportTeams()" style="flex:1"><span class="mi mi-xs">download</span> Exportar equips</button>
+          <button class="btn btn-sm btn-primary" onclick="saveCurrentTeam()" style="flex:1"><span class="mi mi-xs">save</span> Desar equips</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="sidebar-resize" id="sidebarResize"></div>
+
+  <main class="main-area">
+    <div class="toolbar">
+      <div class="view-toggle">
+        <button class="view-toggle-btn active" id="viewToggleAula" onclick="switchCanvasView('aula')"><span class="mi mi-xs">grid_view</span> <span>Aula</span></button>
+        <button class="view-toggle-btn" id="viewToggleEquips" onclick="switchCanvasView('equips')"><span class="mi mi-xs">groups</span> <span>Equips</span></button>
+      </div>
+      <span class="active-team-badge" id="activeTeamBadge" style="display:none"></span>
+      <div class="toolbar-sep" id="toolbarSep0"></div>
+      <span class="toolbar-label" id="toolbarAulaTools">Eines:</span>
+      <button class="btn btn-sm" id="toolbarClearBtn" onclick="clearAllSeats()"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
+      <div class="toolbar-sep" id="toolbarSep1"></div>
+      <span class="toolbar-label" id="deskCountLabel">Pupitres: 0</span>
+      <div style="flex:1"></div>
+      <div id="toolbarScore"></div>
+    </div>
+
+    <div class="canvas-wrap">
+      <div class="canvas-area" id="canvasArea">
+        <div class="canvas-inner" id="canvasInner">
+          <div class="classroom" id="classroom">
+            <div class="teacher-desk"><span class="mi">school</span> Taula del professor/a</div>
+            <div id="desksContainer">
+              <svg id="relationSvg" width="0" height="0"></svg>
+            </div>
+          </div>
+          <div id="teamsCanvas" style="display:none;position:relative;padding:20px;min-width:2000px;min-height:2000px;">
+            <div id="teamsContainer" style="position:relative;"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary fab-auto" id="autoAssignFab" onclick="showAutoAssign()"><span class="mi mi-sm">auto_awesome</span> Auto-assignar</button>
+      <button class="fab-teams" id="fabTeamsBtn" onclick="createTeamsFromFab()"><span class="mi mi-sm">groups</span> Formar equips</button>
+      <button class="btn btn-icon" id="invertTeacherBtn" onclick="toggleTeacherPosition()" title="Taula del professorat a baix"
+              style="position:absolute;bottom:12px;left:12px;z-index:50;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);width:32px;height:32px;">
+        <span class="mi mi-sm">sync</span>
+      </button>
+      <div class="zoom-controls">
+        <button class="btn btn-icon" onclick="zoomIn()" title="Ampliar"><span class="mi mi-sm">zoom_in</span></button>
+        <div class="zoom-label" id="zoomLabel">100%</div>
+        <button class="btn btn-icon" onclick="zoomOut()" title="Reduir"><span class="mi mi-sm">zoom_out</span></button>
+        <button class="btn btn-icon" onclick="zoomReset()" title="Enquadrar" style="margin-top:4px"><span class="mi mi-sm">fit_screen</span></button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<nav class="mobile-bottom-nav" id="mobileBottomNav">
+  <button class="mobile-nav-btn" data-nav="info" onclick="mobileNav('info')"><span class="mi">info</span>Info</button>
+  <button class="mobile-nav-btn" data-nav="alumnes" onclick="mobileNav('alumnes')"><span class="mi">people</span>Alumnes</button>
+  <button class="mobile-nav-btn" data-nav="relacions" onclick="mobileNav('relacions')"><span class="mi">link</span>Relacions</button>
+  <button class="mobile-nav-btn" data-nav="layout" onclick="mobileNav('layout')"><span class="mi">dashboard</span>Disseny</button>
+  <button class="mobile-nav-btn" data-nav="equips" onclick="mobileNav('equips')"><span class="mi">groups</span>Equips</button>
+</nav>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalContent"></div></div>
+<div class="toast-container" id="toastContainer"></div>
+<div class="pdf-area" id="pdfArea"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/state.js"></script>
+<script src="assets/js/profiles.js"></script>
+<script src="assets/js/students.js"></script>
+<script src="assets/js/relations.js"></script>
+<script src="assets/js/seating.js"></script>
+<script src="assets/js/autoassign.js"></script>
+<script src="assets/js/teams.js"></script>
+<script src="assets/js/teamscanvas.js"></script>
+<script src="assets/js/exports.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

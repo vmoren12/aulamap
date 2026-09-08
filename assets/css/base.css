@@ -1,0 +1,53 @@
+/* AulaMap — Capçalera, botons, modals, toasts i utilitats globals */
+/* HEADER */
+.app-header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);position:relative;z-index:100;flex-shrink:0;}
+.app-logo{display:flex;align-items:center;gap:8px;}
+.app-logo svg{width:28px;height:28px;}
+.app-logo h1{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:-0.5px;}
+.app-logo h1 span{color:var(--accent);}
+
+
+/* BUTTONS */
+.btn{font-family:var(--font);font-size:12px;font-weight:600;padding:6px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2);color:var(--text);cursor:pointer;transition:all 0.12s;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;line-height:1.2;}
+.btn:hover{background:var(--surface3);border-color:var(--accent);}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn-primary:hover{background:var(--accent2);}
+#teamCreateBtn:hover:not(:disabled){background:#e5a800;border-color:#e5a800;}
+.btn-sm{padding:4px 8px;font-size:11px;}
+.btn-danger{border-color:var(--red);color:var(--red);}
+.btn-danger:hover{background:var(--red-bg);}
+.btn-icon{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;}
+.btn:disabled{opacity:0.35;cursor:default;pointer-events:none;}
+
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity 0.15s;}
+.modal-overlay.active{opacity:1;pointer-events:all;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:90%;max-width:520px;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow);}
+.modal h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.modal-footer{display:flex;justify-content:flex-end;gap:6px;margin-top:16px;}
+
+/* TOAST */
+.toast-container{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2000;display:flex;flex-direction:column;gap:6px;align-items:center;}
+
+.toast{padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;box-shadow:var(--shadow);animation:slideIn 0.25s ease-out;display:flex;align-items:center;gap:6px;}
+.toast.success{border-left:3px solid var(--green);}
+.toast.error{border-left:3px solid var(--red);}
+.toast.info{border-left:3px solid var(--accent);}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* SCORE */
+.score-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:16px;font-size:11px;font-weight:700;font-family:var(--mono);}
+.score-badge.good{background:var(--green-bg);color:var(--green);}
+.score-badge.medium{background:var(--orange-bg);color:var(--orange);}
+.score-badge.bad{background:var(--red-bg);color:var(--red);}
+
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* PDF */
+.pdf-area{position:fixed;left:-9999px;top:0;background:#fff;padding:36px;font-family:'DM Sans',Arial,sans-serif;color:#1a1a1a;}
+

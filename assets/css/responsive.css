@@ -1,0 +1,211 @@
+/* AulaMap — Navegació mòbil i disseny responsiu */
+/* ══════════════════════════════════════════════════ */
+/* MOBILE BOTTOM NAV                                  */
+/* ══════════════════════════════════════════════════ */
+.mobile-bottom-nav{display:none;}
+
+/* ══════════════════════════════════════════════════ */
+/* MOBILE HEADER DROPDOWN MENU                        */
+/* ══════════════════════════════════════════════════ */
+.header-dropdown{display:none;position:absolute;top:100%;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);z-index:200;min-width:200px;padding:6px 0;animation:dropdownIn 0.15s ease-out;}
+.header-dropdown.show{display:block;}
+.header-dropdown-item{display:flex;align-items:center;gap:8px;padding:10px 16px;font-size:13px;color:var(--text);cursor:pointer;border:none;background:none;width:100%;font-family:var(--font);transition:background 0.1s;}
+.header-dropdown-item:hover{background:var(--surface2);}
+.header-dropdown-item .mi{font-size:16px;color:var(--text2);}
+.header-dropdown-item.danger{color:var(--red);}
+.header-dropdown-item.danger .mi{color:var(--red);}
+.header-dropdown-sep{height:1px;background:var(--border);margin:4px 0;}
+@keyframes dropdownIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ══════════════════════════════════════════════════ */
+/* MOBILE RESPONSIVE                                  */
+/* ══════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Header compact */
+  .app-header{padding:8px 12px;}
+  .app-logo svg{width:24px;height:24px;}
+  .app-logo h1{font-size:15px;}
+  
+
+  /* Hide docent bar selectively — keep compact */
+  .docent-bar{padding:4px 10px;gap:4px;font-size:11px;}
+  .docent-bar .lbl{display:none;}
+  .docent-bar select{font-size:11px;max-width:120px;}
+
+  /* Sidebar as full-screen overlay on mobile */
+  .sidebar{
+    position:fixed;
+    bottom:0; left:0; right:0;
+    top:auto;
+    height:52%;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    z-index:500;
+    transform:translateY(100%);
+    transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    border-radius:16px 16px 0 0;
+    border-top:2px solid var(--accent);
+  }
+  .sidebar.mobile-open{
+    transform:translateY(0);
+  }
+  .sidebar-resize{display:none!important;}
+  .sidebar-close-btn{
+    display:flex;
+    position:absolute;
+    top:10px;right:10px;
+    z-index:510;
+    width:36px;height:36px;
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:50%;
+    align-items:center;justify-content:center;
+    cursor:pointer;
+    color:var(--text);
+    font-size:20px;
+  }
+  .sidebar-tabs{
+    padding-top:8px;
+    padding-right:46px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .sidebar-tabs::-webkit-scrollbar{display:none;}
+  .sidebar-tab{
+    padding:12px 6px;
+    font-size:9px;
+    white-space:nowrap;
+    min-width:0;
+    flex:0 0 auto;
+    width:calc(100% / 5);
+  }
+  .sidebar-content{padding:10px 12px 70px;}
+
+  /* Mobile bottom navigation */
+  .mobile-bottom-nav{
+    display:flex;
+    position:fixed;
+    bottom:0;left:0;right:0;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    z-index:400;
+    padding:2px 0 calc(2px + var(--safe-bottom));
+    justify-content:space-around;
+    align-items:stretch;
+  }
+  .mobile-nav-btn{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;padding:6px 4px;
+    background:none;border:none;color:var(--text3);
+    font-family:var(--font);font-size:9px;font-weight:600;
+    cursor:pointer;flex:1;
+    transition:color 0.15s;
+    text-transform:uppercase;
+    letter-spacing:0.3px;
+  }
+  .mobile-nav-btn .mi{font-size:20px;}
+  .mobile-nav-btn.active{color:var(--accent);}
+  .mobile-nav-btn[data-nav="equips"]{background-color:var(--orange-bg);color:var(--orange);}
+  .mobile-nav-btn[data-nav="equips"].active{color:var(--orange);background-color:var(--orange-bg);}
+  .mobile-nav-btn:active{color:var(--accent);background:var(--accent-glow);}
+  .mobile-nav-btn[data-nav="equips"]:active{color:var(--orange);background:var(--orange-bg);}
+
+  /* Main area — full width */
+  .app-body{flex-direction:column;}
+  .main-area{flex:1;min-height:0;}
+
+  /* Toolbar compact */
+  .toolbar{padding:5px 8px;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .toolbar::-webkit-scrollbar{display:none;}
+  .toolbar-sep{margin:0 2px;}
+  .view-toggle-btn{padding:4px 8px;font-size:10px;}
+  .active-team-badge{font-size:9px;padding:2px 6px;}
+
+  /* Canvas adjustments */
+  .canvas-wrap{flex:1;}
+  .fab-auto{
+    bottom:60px;right:8px;
+    padding:7px 14px;font-size:12px;
+    border-radius:24px;
+  }
+  .zoom-controls{
+    bottom:104px;right:8px;
+  }
+  .zoom-controls .btn-icon{width:34px;height:34px;}
+  #invertTeacherBtn{
+    bottom:60px!important;left:8px!important;
+    width:34px!important;height:34px!important;
+  }
+
+  /* Touch-friendly desk action buttons — always visible on mobile */
+  .desk .rm-btn,.desk .mv-btn,.desk .del-desk-btn{
+    width:22px;height:22px;
+    display:flex!important;
+  }
+  .desk .lock-btn{width:22px;height:22px;}
+  .desk.occupied .lock-btn{display:flex!important;}
+  .desk.occupied .rm-btn{display:flex!important;}
+  .desk .mv-btn{display:flex!important;}
+  .desk .del-desk-btn{display:flex!important;}
+
+  /* Team lock buttons always visible on mobile */
+  .team-table-member .tm-lock-btn{display:flex!important;}
+  .eq-group-card .eq-member-lock-btn{display:flex!important;}
+
+  /* Fab teams on mobile */
+  .fab-teams{bottom:60px;right:8px;padding:7px 14px;font-size:12px;border-radius:24px;}
+
+  /* Modal fullscreen on mobile */
+  .modal{
+    width:96%;max-width:none;
+    max-height:85vh;
+    border-radius:16px 16px var(--radius) var(--radius);
+    padding:16px;
+  }
+  .modal h3{font-size:14px;margin-bottom:10px;}
+  .modal-footer{
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:14px;
+  }
+  .modal-footer .btn{
+    flex:1 1 auto;
+    min-width:0;
+    justify-content:center;
+    padding:10px 12px;
+    font-size:12px;
+    white-space:nowrap;
+  }
+
+  /* Toast position adjusted for bottom nav */
+.toast-container{bottom:64px;left:50%;right:auto;transform:translateX(-50%);}
+  .toast{font-size:11px;padding:8px 10px;}
+
+  /* Saved teams cards — smaller */
+  .eq-saved-card{width:130px;}
+
+  /* Constraint columns stack on very small screens */
+  .eq-constraint-col{min-width:0;}
+}
+
+@media (max-width: 420px) {
+  .app-header{padding:6px 10px;}
+  .app-logo h1{font-size:14px;}
+  .docent-bar select{max-width:90px;font-size:10px;}
+  .docent-bar .btn-sm{padding:3px 5px;}
+  .sidebar-tab{font-size:8px;padding:10px 3px;}
+  .toolbar-label{font-size:9px;}
+  .view-toggle-btn span:last-child{display:none;}
+  .eq-constraint-col + .eq-constraint-col{margin-top:8px;}
+  .equips-section > div[style*="display:flex;gap:8px"]{flex-direction:column;}
+}
+
+/* Landscape on small devices */
+@media (max-height: 500px) and (max-width: 900px) {
+  .sidebar-content{padding:8px 10px 60px;}
+  .mobile-bottom-nav{padding:1px 0 calc(1px + var(--safe-bottom));}
+  .mobile-nav-btn{padding:4px 2px;font-size:8px;}
+  .mobile-nav-btn .mi{font-size:18px;}
+}

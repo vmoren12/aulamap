@@ -1,0 +1,17 @@
+/* AulaMap — Design tokens, reset i tipografia base */
+:root {
+  --bg:#0F1117; --surface:#1A1D27; --surface2:#242836; --surface3:#2E3344;
+  --border:#363B4E; --text:#E8EAF0; --text2:#9CA3B8; --text3:#6B7280;
+  --accent:#6C8EEF; --accent2:#5A7DE0; --accent-glow:rgba(108,142,239,0.15);
+  --green:#4ADE80; --green-bg:rgba(74,222,128,0.12);
+  --red:#F87171; --red-bg:rgba(248,113,113,0.12);
+  --orange:#FBBF24; --orange-bg:rgba(251,191,36,0.12);
+  --radius:10px; --radius-sm:6px; --shadow:0 4px 24px rgba(0,0,0,0.3);
+  --font:'DM Sans',sans-serif; --mono:'Space Mono',monospace;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;height:100dvh;overflow:hidden;display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent;}
+.mi{font-family:'Material Symbols Rounded';font-size:18px;font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-smoothing:antialiased;vertical-align:middle;}
+.mi-sm{font-size:16px;} .mi-xs{font-size:14px;}
+
