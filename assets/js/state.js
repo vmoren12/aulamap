@@ -84,7 +84,7 @@ function normalizeConfigData(data) {
     .map(r => ({
       id: r.id || uid('rel'),
       type: r.type === REL_SEPARATE ? REL_SEPARATE : REL_TOGETHER,
-      students: (r.students || []).filter(id => ids.has(id))
+      students: [...new Set((r.students || []).filter(id => ids.has(id)))]
     }))
     .filter(r => r.students.length > 0);
   Object.keys(out.assignments).forEach(deskId => {

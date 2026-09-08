@@ -31,7 +31,7 @@ let _graphCache = { key: '', graph: null };
  */
 function buildNeighborGraph(desks) {
   const key = desks.map(d => `${d.id}:${d.x},${d.y}`).join('|');
-  if (_graphCache.key === key) return _graphCache.graph;
+  if (_graphCache.key === key && _graphCache.graph) return _graphCache.graph;
 
   const n = desks.length;
   const adj = new Map(desks.map(d => [d.id, new Set()]));
@@ -80,6 +80,39 @@ function buildStudentDeskMap(data) {
 /* ── Avaluació ───────────────────────────────────────── */
 
 /**
+ * Detecta contradiccions entre els conjunts, abans d'assignar els alumnes.
+ */
+function findRelationContradictions(data) {
+  // Separar prohibeix arestes; ajuntar exigeix connexió dins del conjunt.
+  // El graf amb TOTES les arestes permeses és un test exacte de coherència
+  // abstracta, però no garanteix espai en una distribució de pupitres concreta.
+  // No fusionem conjunts solapats: cadascun ha de ser connex per si mateix.
+  const separate = data.relations.filter(r => r.type === REL_SEPARATE);
+  const conflicts = [];
+  for (const rel of data.relations.filter(r => r.type === REL_TOGETHER)) {
+    const members = [...new Set(rel.students)];
+    if (members.length < 2) continue;
+    const allowed = new Map(members.map(id => [id, new Set()]));
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const a = members[i], b = members[j];
+        if (!separate.some(r => r.students.includes(a) && r.students.includes(b))) {
+          allowed.get(a).add(b);
+          allowed.get(b).add(a);
+        }
+      }
+    }
+    const components = connectedComponents(members, Object.fromEntries(members.map(id => [id, id])), allowed);
+    if (components.length < 2) continue;
+    const componentOf = new Map(components.flatMap((group, i) => group.map(id => [id, i])));
+    const blockers = separate.filter(r => new Set(r.students
+      .filter(id => componentOf.has(id)).map(id => componentOf.get(id))).size > 1);
+    conflicts.push({ togetherId: rel.id, separateIds: blockers.map(r => r.id), components });
+  }
+  return conflicts;
+}
+
+/**
  * Estat de cada relació respecte de la distribució actual.
  * @returns {{results:Array, satisfied:number, violated:number, pending:number, pct:number|null}}
  */
@@ -107,11 +140,11 @@ function evaluateRelations(data) {
             }
           }
         }
-        result.status = conflicts.length ? 'viol' : 'sat';
+        result.status = conflicts.length ? 'viol' : seated.length < rel.students.length ? 'pend' : 'sat';
         result.conflicts = conflicts;
         result.message = conflicts.length
           ? 'Seuen a prop: ' + conflicts.map(p => `${nameOf(p[0])} i ${nameOf(p[1])}`).join('; ')
-          : 'Cap parella a prop';
+          : result.status === 'pend' ? 'Pendent: alumnes sense lloc' : 'Cap parella a prop';
       }
     } else { // ajuntar
       if (seated.length < rel.students.length) {
@@ -207,6 +240,16 @@ function renderRelationsPanel() {
   const evaluation = evaluateRelations(data);
   const statusById = new Map(evaluation.results.map(r => [r.id, r]));
   const nameOf = id => data.students.find(s => s.id === id)?.name || '?';
+  const contradictions = findRelationContradictions(data);
+  const incompatibleIds = new Set(contradictions.flatMap(c => [c.togetherId, ...c.separateIds]));
+  const labelOf = id => {
+    const rel = data.relations.find(r => r.id === id);
+    return `${REL_LABEL[rel.type]} ${data.relations.filter(r => r.type === rel.type).findIndex(r => r.id === id) + 1}`;
+  };
+  el('relConflictSummary').innerHTML = contradictions.map(c => {
+    const groups = c.components.map(group => group.map(nameOf).join(', ')).join(' / ');
+    return `<p class="relation-conflict">${esc(labelOf(c.togetherId))} és incompatible amb ${esc(c.separateIds.map(labelOf).join(', '))}: les separacions impedeixen connectar aquests blocs: ${esc(groups)}.</p>`;
+  }).join('');
 
   [REL_TOGETHER, REL_SEPARATE].forEach(type => {
     const container = el(type === REL_TOGETHER ? 'relTogetherSets' : 'relSeparateSets');
@@ -220,7 +263,7 @@ function renderRelationsPanel() {
       const tags = rel.students.length
         ? rel.students.map(id => `<span class="cset-tag">${esc(nameOf(id))}<button title="Treure" onclick="relRemoveStudent('${esc(rel.id)}','${esc(id)}')">&times;</button></span>`).join('')
         : '<span class="cset-empty">Encara sense alumnes</span>';
-      return `<div class="cset ${result.status}">
+      return `<div class="cset ${result.status}${incompatibleIds.has(rel.id) ? ' incompatible' : ''}">
         <div class="cset-header">
           <span class="cset-name">${REL_LABEL[type]} ${index + 1}</span>
           <span class="mi mi-sm cset-status ${result.status}" title="${esc(result.message)}">${icon}</span>

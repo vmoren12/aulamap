@@ -74,6 +74,7 @@
 .cset-title.separate{color:var(--red);}
 .cset{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;margin-bottom:4px;font-size:11px;}
 .cset.incompatible{border-color:var(--red);background:var(--red-bg);}
+.relation-conflict{font-size:11px;line-height:1.5;color:var(--red);background:var(--red-bg);border:1px solid var(--red);border-radius:var(--radius-sm);padding:8px;margin:8px 0 0;overflow-wrap:anywhere;}
 .cset.sat{border-left:3px solid var(--green);}
 .cset.viol{border-left:3px solid var(--red);}
 .cset.pend{border-left:3px solid var(--border);}

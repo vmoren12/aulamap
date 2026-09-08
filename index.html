@@ -113,8 +113,8 @@
       <!-- RELACIONS -->
       <div class="sidebar-panel" id="panel-relacions">
         <div class="panel-hint">
-          Crea conjunts d'alumnes per <b class="together">ajuntar</b> (que seguin junts) o per
-          <b class="separate">separar</b> (que no seguin a prop). Pots afegir-hi diversos alumnes de cop.
+          Crea conjunts d'alumnes per <b class="together">ajuntar</b> (formar un bloc connectat de veïns dins del conjunt) o per
+          <b class="separate">separar</b> (cap parella del conjunt en pupitres veïns). Pots afegir-hi diversos alumnes de cop.
         </div>
         <div class="cset-cols">
           <div class="cset-col">
@@ -122,7 +122,6 @@
             <div id="relTogetherSets"></div>
             <div class="cset-actions">
               <button class="btn btn-sm" onclick="relAddSet('together')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
-              <button class="btn btn-sm" onclick="relAddSetWithStudents('together')" title="Triar diversos alumnes"><span class="mi mi-xs">group_add</span> Grup</button>
             </div>
           </div>
           <div class="cset-col">
@@ -130,10 +129,10 @@
             <div id="relSeparateSets"></div>
             <div class="cset-actions">
               <button class="btn btn-sm" onclick="relAddSet('separate')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
-              <button class="btn btn-sm" onclick="relAddSetWithStudents('separate')" title="Triar diversos alumnes"><span class="mi mi-xs">group_add</span> Grup</button>
             </div>
           </div>
         </div>
+        <div id="relConflictSummary" role="status" aria-live="polite"></div>
         <div id="relScoreSummary" style="margin-top:12px"></div>
       </div>
 
