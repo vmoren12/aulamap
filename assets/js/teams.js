@@ -347,10 +347,14 @@ function doCreateTeams() {
   teams.teamNames = {};
   teams.positions = {};
   teams.activeSaved = null;
+  arrangeTeamDesks();
   saveState();
 
   if (currentCanvasView !== 'equips') switchCanvasView('equips');
-  viewPanZoom.equips.initialized = false;
+  clearTableSelection();
+  renderLayoutOptions();
+  renderStudentList();
+  updateCounts();
   renderTeamsPanel();
   renderTeamsCanvas();
   updateActiveTeamBadge();
@@ -666,7 +670,12 @@ function renderTeamsSidebar(groups) {
 
 function moveStudentToTeam(studentId, fromIndex, toIndex) {
   const teams = getTeams();
-  if (fromIndex === toIndex || !teams.groups) return;
+  if (fromIndex === toIndex || !teams.groups?.[fromIndex]?.includes(studentId) || !teams.groups[toIndex]) return false;
+  if (teams.lockedTeams[toIndex]) {
+    toast(`${teamName(toIndex)} està bloquejat`, 'error');
+    renderTeamsSidebar(teams.groups);
+    return false;
+  }
   if (teams.lockedStudents[studentId] !== undefined) {
     toast(`${studentName(studentId)} està fixat/da a ${teamName(fromIndex)}`, 'error');
     renderTeamsSidebar(teams.groups);
@@ -675,9 +684,14 @@ function moveStudentToTeam(studentId, fromIndex, toIndex) {
   saveWithUndo();
   teams.groups[fromIndex] = teams.groups[fromIndex].filter(id => id !== studentId);
   teams.groups[toIndex].push(studentId);
+  placeDeskWithTeam(studentId, toIndex);
   saveState();
+  renderLayoutOptions();
+  renderStudentList();
+  updateCounts();
   renderTeamsSidebar(teams.groups);
   renderTeamsCanvas();
+  return true;
 }
 
 function startRenameTeam(index, sourceElement) {
@@ -906,8 +920,12 @@ function loadSavedTeam(index) {
     teams.lockedStudents = {};
     teams.positions = {};
     teams.activeSaved = index;
+    arrangeTeamDesks();
     saveState();
-    viewPanZoom.equips.initialized = false;
+    clearTableSelection();
+    renderLayoutOptions();
+    renderStudentList();
+    updateCounts();
     renderTeamsPanel();
     renderTeamsCanvas();
     updateActiveTeamBadge();

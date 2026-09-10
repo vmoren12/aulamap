@@ -1,110 +1,167 @@
 /**
- * AulaMap — Llenç d'equips
- * Taules d'equip col·locables, arrossegament d'alumnes entre equips i insígnia
- * de l'equip actiu.
+ * AulaMap — Mode d'equips sobre els pupitres de l'aula.
+ * Agrupació, moviment i canvi de membres al mateix llenç.
  */
 'use strict';
 
-function renderTeamsCanvas() {
-  const container = el('teamsContainer');
-  if (!container) return;
+function desksForTeam(index) {
   const data = getData();
-  const teams = data.teams;
-  const groups = teams.groups;
+  const members = new Set(getTeams().groups?.[index] || []);
+  return data.desks.filter(desk => members.has(data.assignments[desk.id]));
+}
 
-  if (!groups || !groups.length) {
-    container.innerHTML = `<div class="team-canvas-empty"><span class="mi">groups</span>No hi ha equips actius.<br>
-      Ves a la pestanya <strong>Equips</strong> i forma'n.</div>`;
-    updateFabTeamsButton();
-    return;
-  }
+function teamIndexForDesk(deskId) {
+  const studentId = getData().assignments[deskId];
+  return (getTeams().groups || []).findIndex(group => group.includes(studentId));
+}
 
-  const showCompetency = teams.useCompetency;
-  const violations = teamViolations(groups);
-  const columns = Math.min(groups.length, isMobile() ? 2 : 4);
-
-  groups.forEach((_, index) => {
-    if (!teams.positions[index]) {
-      teams.positions[index] = {
-        x: 40 + (index % columns) * (isMobile() ? 170 : 200),
-        y: 40 + Math.floor(index / columns) * 220
-      };
+/** Seu els membres sense lloc, conservant els alumnes i cadenats dels pupitres ocupats. */
+function seatTeamMembers() {
+  const data = getData();
+  const seated = new Set(data.desks.map(desk => data.assignments[desk.id]).filter(Boolean));
+  const valid = new Set(data.students.map(student => student.id));
+  const free = data.desks.filter(desk => !data.assignments[desk.id]);
+  (getTeams().groups || []).flat().forEach(studentId => {
+    if (seated.has(studentId) || !valid.has(studentId)) return;
+    let desk = free.shift();
+    if (!desk) {
+      desk = { id: uid('d'), x: 20, y: 48 };
+      data.desks.push(desk);
     }
+    data.assignments[desk.id] = studentId;
+    seated.add(studentId);
   });
-  Object.keys(teams.positions).forEach(key => { if (parseInt(key, 10) >= groups.length) delete teams.positions[key]; });
+}
 
-  let maxX = 0, maxY = 0;
-  const html = groups.map((group, index) => {
-    const position = teams.positions[index];
-    const color = TEAM_COLORS[index % TEAM_COLORS.length];
-    const isLocked = !!teams.lockedTeams[index];
-    const violation = violations[index];
-    const hasWarning = violation.together.length || violation.separate.length;
+/** Agrupa els pupitres reals; els sobrants es conserven al final. */
+function arrangeTeamDesks() {
+  const data = getData();
+  const groups = getTeams().groups || [];
+  if (!groups.length) return;
+  seatTeamMembers();
+  const columns = isMobile() ? 2 : 3;
+  const groupWidth = DESK_W * 2 + 12;
+  const used = new Set();
+  let rowY = 48;
+  for (let start = 0; start < groups.length; start += columns) {
+    let rowHeight = DESK_H;
+    for (let index = start; index < Math.min(start + columns, groups.length); index++) {
+      const desks = desksForTeam(index);
+      desks.forEach((desk, position) => {
+        desk.x = 20 + (index - start) * (groupWidth + 64) + (position % 2) * (DESK_W + 12);
+        desk.y = rowY + Math.floor(position / 2) * (DESK_H + 12);
+        used.add(desk.id);
+      });
+      rowHeight = Math.max(rowHeight, Math.ceil(desks.length / 2) * (DESK_H + 12) - 12);
+    }
+    rowY += rowHeight + 80;
+  }
+  data.desks.filter(desk => !used.has(desk.id)).forEach((desk, index) => {
+    desk.x = 20 + (index % (columns * 2)) * (DESK_W + 20);
+    desk.y = rowY + Math.floor(index / (columns * 2)) * (DESK_H + 20);
+  });
+  centerDesks(data.desks);
+  data.layoutType = 'free';
+}
 
-    const members = group.map(studentId => {
-      const student = findStudent(studentId);
-      const studentLocked = teams.lockedStudents[studentId] !== undefined;
-      return `<div class="team-table-member${studentLocked ? ' student-locked' : ''}"
-          draggable="${studentLocked ? 'false' : 'true'}" data-student="${esc(studentId)}" data-from-team="${index}"
-          ondragstart="onTeamMemberDragStart(event,'${esc(studentId)}',${index})" ondragend="onTeamMemberDragEnd(event)">
-        <div class="tm-av" style="background:${esc(student?.color || '#6B7280')}">${esc(initialOf(student?.name))}</div>
-        <span class="tm-name">${esc(student?.name || '?')}</span>
-        ${showCompetency ? `<span class="tm-comp">${competencyOf(studentId)}</span>` : ''}
-        <button class="tm-lock-btn${studentLocked ? ' locked' : ''}" title="${studentLocked ? 'Desbloquejar' : 'Fixar a aquest equip'}"
-                onclick="event.stopPropagation();toggleStudentLock('${esc(studentId)}',${index})">
-          <span class="mi" style="font-size:12px">${studentLocked ? 'lock' : 'lock_open'}</span>
-        </button>
-      </div>`;
-    }).join('');
+function autoArrangeTeamDesks() {
+  if (!getTeams().groups?.length) return;
+  endTableGesture();
+  saveWithUndo();
+  arrangeTeamDesks();
+  clearTableSelection();
+  saveState();
+  renderLayoutOptions();
+  renderTeamsCanvas();
+  renderStudentList();
+  updateCounts();
+  zoomReset();
+}
 
-    const estimatedHeight = 36 + group.length * 26 + (showCompetency ? 28 : 0);
-    maxX = Math.max(maxX, position.x + 160);
-    maxY = Math.max(maxY, position.y + estimatedHeight);
+/** Canviar de grup mou només el pupitre del membre a un lloc lliure proper. */
+function placeDeskWithTeam(studentId, index) {
+  seatTeamMembers();
+  const data = getData();
+  const desk = data.desks.find(item => data.assignments[item.id] === studentId);
+  if (!desk) return;
+  const others = desksForTeam(index).filter(item => item !== desk);
+  const originX = others.length ? Math.min(...others.map(item => item.x)) : 20;
+  const originY = others.length ? Math.min(...others.map(item => item.y)) : Math.max(48, ...data.desks.map(item => item.y + DESK_H + 80));
+  for (let slot = 0; ; slot++) {
+    const x = originX + (slot % 2) * (DESK_W + 12);
+    const y = originY + Math.floor(slot / 2) * (DESK_H + 12);
+    const overlaps = data.desks.some(item => item !== desk &&
+      x < item.x + DESK_W + 6 && x + DESK_W + 6 > item.x &&
+      y < item.y + DESK_H + 6 && y + DESK_H + 6 > item.y);
+    if (!overlaps) { desk.x = x; desk.y = y; break; }
+  }
+  data.layoutType = 'free';
+}
 
-    return `<div class="team-table${hasWarning ? ' has-warnings' : ''}${isLocked ? ' team-locked' : ''}" data-team-idx="${index}"
-        style="left:${position.x}px;top:${position.y}px;${!isLocked && !hasWarning ? `border-color:${color}40;` : ''}"
-        ondragover="onTeamDragOver(event,${index})" ondragleave="onTeamDragLeave(event)" ondrop="onTeamDrop(event,${index})">
-      <div class="team-table-header" style="${!isLocked ? `background:${color}18;` : ''}">
-        <div class="team-mv" title="Moure equip" onpointerdown="onTeamMoveStart(event,${index})"><span class="mi mi-xs">open_with</span></div>
-        <span class="team-title" style="color:${isLocked ? 'var(--orange)' : color}" ondblclick="event.stopPropagation();startRenameTeam(${index},this)">${esc(teamName(index))}</span>
-        <button class="team-lock-btn${isLocked ? ' locked' : ''}" title="${isLocked ? 'Desbloquejar equip' : 'Bloquejar equip'}"
-                onclick="event.stopPropagation();toggleTeamLock(${index})"><span class="mi" style="font-size:14px">${isLocked ? 'lock' : 'lock_open'}</span></button>
-        <span class="team-count">${group.length}</span>
-      </div>
-      <div class="team-table-members">${members}</div>
-      ${showCompetency ? `<div class="team-table-avg">Nivell mitjà: ${groupMean(group).toFixed(2)}</div>` : ''}
-    </div>`;
-  }).join('');
-
-  container.style.width = Math.max(maxX + 60, 800) + 'px';
-  container.style.height = Math.max(maxY + 60, 600) + 'px';
-  container.innerHTML = html;
-  if (currentCanvasView === 'equips') refreshTableSelection();
+function renderTeamsCanvas() {
+  renderDesks();
+  updateActiveTeamBadge();
   updateFabTeamsButton();
 }
 
-/* ── Moviment de les taules d'equip ──────────────────── */
-
-function onTeamMoveStart(event, index) {
-  startTableMove(event, index);
+/** Capçaleres sobre els pupitres reals, sense un segon llenç. */
+function renderTeamOverlays() {
+  const container = el('desksContainer');
+  container.querySelectorAll('.team-zone').forEach(node => node.remove());
+  el('classroom').classList.toggle('teams-mode', currentCanvasView === 'equips');
+  const arrange = el('arrangeTeamsBtn');
+  if (arrange) arrange.disabled = !getTeams().groups?.length;
+  if (currentCanvasView !== 'equips') return;
+  const teams = getTeams();
+  const groups = teams.groups || [];
+  const violations = teamViolations(groups);
+  const right = Math.max(20, ...getData().desks.map(desk => desk.x + DESK_W + 40));
+  container.insertAdjacentHTML('beforeend', groups.map((group, index) => {
+    const desks = desksForTeam(index);
+    const x = desks.length ? Math.min(...desks.map(desk => desk.x)) : right;
+    const y = desks.length ? Math.min(...desks.map(desk => desk.y)) - 36 : 12 + index * 48;
+    const locked = !!teams.lockedTeams[index];
+    const warning = violations[index].together.length || violations[index].separate.length;
+    const missing = group.length - desks.length;
+    return `<div class="team-zone" style="left:${x}px;top:${y}px" data-team-idx="${index}"
+        ondragover="onTeamDragOver(event,${index})" ondragleave="onTeamDragLeave(event)" ondrop="onTeamDrop(event,${index})">
+      <div class="team-zone-header">
+        <button class="team-mv" title="Moure tots els pupitres de l'equip" onpointerdown="onTeamMoveStart(event,${index})"><span class="mi mi-xs">open_with</span></button>
+        <span class="team-title" title="Doble clic per canviar el nom" ondblclick="startRenameTeam(${index},this)">${esc(teamName(index))}</span>
+        <span class="team-count">${group.length}</span>
+        ${teams.useCompetency ? `<span class="team-mean" title="Nivell mitjà">${groupMean(group).toFixed(2)}</span>` : ''}
+        ${warning ? '<span class="mi mi-xs" title="Hi ha restriccions incomplertes; consulta el panell">warning</span>' : ''}
+        ${missing > 0 ? `<span class="team-count" title="Organitza les taules per donar-los lloc">${missing} sense lloc</span>` : ''}
+        <button class="team-lock-btn${locked ? ' locked' : ''}" title="${locked ? 'Desbloquejar equip' : 'Bloquejar equip'}"
+          onclick="toggleTeamLock(${index})"><span class="mi mi-xs">${locked ? 'lock' : 'lock_open'}</span></button>
+      </div>
+    </div>`;
+  }).join(''));
 }
 
-/* ── Arrossegament d'alumnes entre equips ────────────── */
+function onTeamMoveStart(event, index) {
+  if (event.button !== 0 || spaceHeld || tableGesture) return;
+  const desks = desksForTeam(index);
+  if (!desks.length) return;
+  clearTableSelection();
+  desks.forEach(desk => tableSelection.add(desk.id));
+  startTableMove(event, desks[0].id);
+}
 
 let teamDrag = { studentId: null, fromIndex: null };
 
 function onTeamMemberDragStart(event, studentId, fromIndex) {
-  if (getTeams().lockedStudents[studentId] !== undefined) { event.preventDefault(); return; }
+  if (spaceHeld || tableGesture || getTeams().lockedStudents[studentId] !== undefined) { event.preventDefault(); return; }
   teamDrag = { studentId, fromIndex };
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', studentId);
   event.target.closest('.team-table-member')?.classList.add('tm-dragging');
-  event.target.closest('.team-table')?.classList.add('drag-source');
+  event.target.closest('.desk')?.classList.add('drag-source');
 }
 
 function onTeamMemberDragEnd(event) {
   event.target.closest('.team-table-member')?.classList.remove('tm-dragging');
-  document.querySelectorAll('.team-table.drag-source,.team-table.drag-over-team')
+  document.querySelectorAll('.drag-source,.drag-over-team')
           .forEach(node => node.classList.remove('drag-source', 'drag-over-team'));
   teamDrag = { studentId: null, fromIndex: null };
 }
@@ -126,8 +183,7 @@ function onTeamDrop(event, toIndex) {
   event.currentTarget.classList.remove('drag-over-team');
   const { studentId, fromIndex } = teamDrag;
   if (studentId === null || fromIndex === null || fromIndex === toIndex) return;
-  moveStudentToTeam(studentId, fromIndex, toIndex);
-  toast(`${studentName(studentId)} → ${teamName(toIndex)}`, 'success');
+  if (moveStudentToTeam(studentId, fromIndex, toIndex)) toast(`${studentName(studentId)} → ${teamName(toIndex)}`, 'success');
   teamDrag = { studentId: null, fromIndex: null };
 }
 
@@ -145,7 +201,8 @@ function updateActiveTeamBadge() {
     badge.innerHTML = '<span class="mi mi-xs">groups</span> Equips actius';
     badge.style.display = '';
   } else {
-    badge.style.display = 'none';
+    badge.innerHTML = '<span class="mi mi-xs">groups</span> Mode de formació d’equips';
+    badge.style.display = '';
   }
 }
 

@@ -237,6 +237,7 @@
       <div class="toolbar-sep" id="toolbarSep0"></div>
       <span class="toolbar-label" id="toolbarAulaTools">Eines:</span>
       <button class="btn btn-sm" id="toolbarClearBtn" onclick="clearAllSeats()"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
+      <button class="btn btn-sm" id="arrangeTeamsBtn" onclick="autoArrangeTeamDesks()" style="display:none"><span class="mi mi-xs">dashboard</span> Organitzar taules</button>
       <div class="toolbar-sep" id="toolbarSep1"></div>
       <span class="toolbar-label" id="deskCountLabel">Pupitres: 0</span>
       <div style="flex:1"></div>
@@ -244,16 +245,13 @@
     </div>
 
     <div class="canvas-wrap">
-      <div class="canvas-area" id="canvasArea" title="Arrossega el fons per seleccionar taules. Majúscules/Ctrl + clic per afegir o treure taules. Espai + arrossegar per desplaçar el llenç. Esc per desmarcar.">
+      <div class="canvas-area" id="canvasArea" tabindex="-1" aria-label="Llenç de l'aula" title="Arrossega el fons per seleccionar taules. Majúscules/Ctrl + clic per afegir o treure taules. Espai + arrossegar per desplaçar el llenç. Esc per desmarcar.">
         <div class="canvas-inner" id="canvasInner">
           <div class="classroom" id="classroom">
             <div class="teacher-desk"><span class="mi">school</span> Taula del professor/a</div>
             <div id="desksContainer">
               <svg id="relationSvg" width="0" height="0"></svg>
             </div>
-          </div>
-          <div id="teamsCanvas" style="display:none;position:relative;padding:20px;min-width:2000px;min-height:2000px;">
-            <div id="teamsContainer" style="position:relative;"></div>
           </div>
         </div>
       </div>

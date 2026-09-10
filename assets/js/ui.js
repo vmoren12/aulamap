@@ -9,11 +9,6 @@ let panX = 0;
 let panY = 0;
 let currentCanvasView = 'aula';
 
-const viewPanZoom = {
-  aula:   { panX: 0, panY: 0, zoom: 1, initialized: false },
-  equips: { panX: 0, panY: 0, zoom: 1, initialized: false }
-};
-
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 2;
 
@@ -40,7 +35,6 @@ function renderAll() {
   renderLayoutOptions();
   renderStudentList();
   renderRelationsPanel();
-  renderDesks();
   renderTeamsPanel();
   renderTeamsCanvas();
   updateCounts();
@@ -131,71 +125,55 @@ function switchCanvasView(view) {
   if (view === currentCanvasView) return;
   endTableGesture();
   clearTableSelection();
-  saveViewPanZoom();
   currentCanvasView = view;
 
   const isAula = view === 'aula';
   el('viewToggleAula').classList.toggle('active', isAula);
   el('viewToggleEquips').classList.toggle('active', !isAula);
-  el('classroom').style.display = isAula ? '' : 'none';
-  el('teamsCanvas').style.display = isAula ? 'none' : '';
+  el('classroom').classList.toggle('teams-mode', !isAula);
 
-  ['toolbarAulaTools', 'toolbarClearBtn', 'toolbarSep1', 'deskCountLabel', 'toolbarScore']
+  ['toolbarAulaTools', 'toolbarClearBtn', 'toolbarSep1', 'toolbarScore']
     .forEach(id => { const node = el(id); if (node) node.style.display = isAula ? '' : 'none'; });
   el('autoAssignFab').style.display = isAula ? '' : 'none';
-  el('invertTeacherBtn').style.display = isAula ? '' : 'none';
   el('fabTeamsBtn').style.display = 'none';
+  el('arrangeTeamsBtn').style.display = isAula ? 'none' : '';
 
   if (isAula) {
     el('activeTeamBadge').style.display = 'none';
+    if (document.querySelector('.sidebar-tab[data-tab="equips"].active')) switchTab('layout');
   } else {
     switchTab('equips');
-    renderTeamsCanvas();
-    updateActiveTeamBadge();
-    updateFabTeamsButton();
   }
-
-  if (!viewPanZoom[view].initialized) setTimeout(() => zoomReset(), 50);
-  else restoreViewPanZoom(view);
+  renderTeamsCanvas();
 }
 
 /* ── Zoom i desplaçament ─────────────────────────────── */
-
-function saveViewPanZoom() {
-  const view = viewPanZoom[currentCanvasView];
-  view.panX = panX; view.panY = panY; view.zoom = zoomLevel;
-}
-
-function restoreViewPanZoom(name) {
-  const view = viewPanZoom[name];
-  panX = view.panX; panY = view.panY; zoomLevel = view.zoom;
-  applyZoom();
-}
 
 function applyZoom() {
   el('canvasInner').style.transform = `translate(${panX}px,${panY}px) scale(${zoomLevel})`;
   el('zoomLabel').textContent = Math.round(zoomLevel * 100) + '%';
 }
 
-function zoomIn() { zoomLevel = Math.min(ZOOM_MAX, zoomLevel + 0.1); saveViewPanZoom(); applyZoom(); }
-function zoomOut() { zoomLevel = Math.max(ZOOM_MIN, zoomLevel - 0.1); saveViewPanZoom(); applyZoom(); }
+function zoomIn() { zoomLevel = Math.min(ZOOM_MAX, zoomLevel + 0.1); applyZoom(); }
+function zoomOut() { zoomLevel = Math.max(ZOOM_MIN, zoomLevel - 0.1); applyZoom(); }
 
 /** Enquadra la vista activa. */
 function zoomReset() {
   zoomLevel = isMobile() ? 0.7 : 1;
   const area = el('canvasArea');
   if (currentCanvasView === 'equips') {
-    const positions = Object.values(getTeams().positions || {});
+    const positions = getData().desks;
     if (positions.length && area) {
       const minX = Math.min(...positions.map(p => p.x));
       const minY = Math.min(...positions.map(p => p.y));
-      const maxX = Math.max(...positions.map(p => p.x + 160));
-      const maxY = Math.max(...positions.map(p => p.y + 200));
-      const canvas = el('teamsCanvas');
-      panX = area.clientWidth / 2 - ((minX + maxX) / 2 + (canvas?.offsetLeft || 0)) * zoomLevel;
-      panY = area.clientHeight / 2 - ((minY + maxY) / 2 + (canvas?.offsetTop || 0)) * zoomLevel;
+      const maxX = Math.max(...positions.map(p => p.x + DESK_W));
+      const maxY = Math.max(...positions.map(p => p.y + DESK_H));
+      zoomLevel = Math.min(zoomLevel, Math.max(ZOOM_MIN, Math.min((area.clientWidth - 80) / (maxX - minX), (area.clientHeight - 100) / (maxY - minY + 40))));
+      const canvas = el('desksContainer');
+      const classroom = el('classroom');
+      panX = area.clientWidth / 2 - ((minX + maxX) / 2 + canvas.offsetLeft + classroom.offsetLeft) * zoomLevel;
+      panY = area.clientHeight / 2 - ((minY + maxY - 32) / 2 + canvas.offsetTop + classroom.offsetTop) * zoomLevel;
     } else { panX = 0; panY = 0; }
-    viewPanZoom.equips.initialized = true;
   } else {
     const classroom = el('classroom');
     const teacher = classroom.querySelector('.teacher-desk');
@@ -205,9 +183,7 @@ function zoomReset() {
         ? area.clientHeight * 0.92 - (classroom.offsetTop + classroom.offsetHeight) * zoomLevel
         : area.clientHeight * 0.08 - (classroom.offsetTop + teacher.offsetTop) * zoomLevel;
     } else { panX = 0; panY = 0; }
-    viewPanZoom.aula.initialized = true;
   }
-  saveViewPanZoom();
   applyZoom();
 }
 
@@ -220,7 +196,6 @@ function zoomAt(nextZoom, clientX, clientY) {
   zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, nextZoom));
   panX = x - (x - panX) * (zoomLevel / previous);
   panY = y - (y - panY) * (zoomLevel / previous);
-  saveViewPanZoom();
   applyZoom();
 }
 
@@ -228,6 +203,13 @@ function zoomAt(nextZoom, clientX, clientY) {
 
 function initCanvasInteractions() {
   const area = el('canvasArea');
+
+  // El llenç pren el focus abans de preventDefault: espai no reactiva l'últim botó.
+  area.addEventListener('pointerdown', event => {
+    if (event.button === 0 && !event.target.closest('button,input,select,textarea,[contenteditable="true"]')) {
+      area.focus({ preventScroll: true });
+    }
+  }, true);
 
   area.addEventListener('wheel', event => {
     event.preventDefault();
@@ -261,7 +243,7 @@ function initCanvasInteractions() {
   let panning = false;
   let panPointer = null;
   let startX = 0, startY = 0, startPanX = 0, startPanY = 0;
-  const noPanSelector = '.desk,.team-table,button,input,select,textarea';
+  const noPanSelector = '.desk,.team-zone-header,button,input,select,textarea';
 
   area.addEventListener('pointerdown', event => {
     if (event.button !== 0 || panning || tableGesture) return;
@@ -292,15 +274,15 @@ function initCanvasInteractions() {
     panPointer = null;
     suppressCanvasClick = true;
     setTimeout(() => { suppressCanvasClick = false; }, 0);
-    saveViewPanZoom();
     area.classList.remove('panning');
   };
   area.addEventListener('pointerup', endPan);
   area.addEventListener('pointercancel', endPan);
   area.addEventListener('lostpointercapture', endPan);
   document.addEventListener('keydown', event => {
-    if (event.code === 'Space' && !event.target.closest('input,textarea,select,[contenteditable="true"],button') && !isModalOpen()) {
+    if (event.code === 'Space' && !event.target.closest('input,textarea,select,[contenteditable="true"]') && !isModalOpen()) {
       event.preventDefault();
+      area.focus({ preventScroll: true });
       spaceHeld = true;
       area.classList.add('pan-ready');
     }
@@ -314,7 +296,12 @@ function initCanvasInteractions() {
     area.classList.remove('pan-ready');
     endPan();
   };
-  document.addEventListener('keyup', event => { if (event.code === 'Space') releaseSpace(); });
+  document.addEventListener('keyup', event => {
+    if (event.code === 'Space') {
+      if (spaceHeld) event.preventDefault();
+      releaseSpace();
+    }
+  });
   window.addEventListener('blur', releaseSpace);
   initTableSelection();
 }

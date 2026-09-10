@@ -7,11 +7,10 @@ let spaceHeld = false;
 let suppressCanvasClick = false;
 
 function canvasTables() {
-  const teams = currentCanvasView === 'equips';
-  const container = el(teams ? 'teamsContainer' : 'desksContainer');
-  return [...container.querySelectorAll(teams ? '.team-table' : '.desk')].map(node => {
-    const id = teams ? node.dataset.teamIdx : node.dataset.did;
-    const position = teams ? getTeams().positions[id] : getData().desks.find(d => d.id === id);
+  const container = el('desksContainer');
+  return [...container.querySelectorAll('.desk')].map(node => {
+    const id = node.dataset.did;
+    const position = getData().desks.find(d => d.id === id);
     return { id, node, position };
   }).filter(item => item.position);
 }
@@ -61,7 +60,8 @@ function moveTableGesture(event) {
       item.node.style.top = item.position.y + 'px';
       item.node.classList.add('moving');
     });
-    if (currentCanvasView === 'aula') drawRelationLines(getData());
+    drawRelationLines(getData());
+    if (currentCanvasView === 'equips') renderTeamOverlays();
   } else {
     const left = Math.min(gesture.x, event.clientX), top = Math.min(gesture.y, event.clientY);
     const right = Math.max(gesture.x, event.clientX), bottom = Math.max(gesture.y, event.clientY);
@@ -91,11 +91,9 @@ function endTableGesture(event) {
     suppressCanvasClick = true;
     setTimeout(() => { suppressCanvasClick = false; }, 0);
     if (gesture.type === 'move') {
-      if (currentCanvasView === 'aula') {
-        getData().layoutType = 'free';
-        renderLayoutOptions();
-        renderDesks();
-      } else renderTeamsCanvas();
+      getData().layoutType = 'free';
+      renderLayoutOptions();
+      renderDesks();
       saveState();
     }
   }
@@ -105,21 +103,21 @@ function initTableSelection() {
   const area = el('canvasArea');
   area.addEventListener('pointerdown', event => {
     if (spaceHeld || event.button !== 0 || tableGesture) return;
-    const table = event.target.closest('.desk,.team-table');
+    const table = event.target.closest('.desk');
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     if (table) {
-      const id = table.dataset.did ?? table.dataset.teamIdx;
+      const id = table.dataset.did;
       if (additive) {
         event.preventDefault();
         event.stopPropagation();
         if (tableSelection.has(id)) tableSelection.delete(id); else tableSelection.add(id);
         refreshTableSelection();
-      } else if (!event.target.closest('button,input,.team-table-member,.team-title') && tableSelection.has(id)) {
+      } else if (!event.target.closest('button,input') && tableSelection.has(id)) {
         startTableMove(event, id);
       }
       return;
     }
-    if (event.pointerType === 'touch' || event.target.closest('button,input,select,textarea')) return;
+    if (event.pointerType === 'touch' || event.target.closest('button,input,select,textarea,.team-zone-header')) return;
     event.preventDefault();
     if (!additive) clearTableSelection();
     const box = document.createElement('div');

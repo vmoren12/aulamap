@@ -38,6 +38,7 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 - Taula del professorat a dalt o a baix, zoom, enquadrament i desplaçament del llenç.
 - Selecció múltiple a Aula i Equips: arrossega el fons per seleccionar amb un rectangle, o fes Majúscules/Ctrl (Cmd a Mac) + clic per afegir o treure taules. Arrossega una taula seleccionada o el seu control de moviment per moure el conjunt. Esc o un clic al fons desmarca la selecció.
 - Desplaçament del llenç amb espai sostingut + arrossegament del ratolí; en pantalles tàctils, arrossega el fons amb un dit. Els moviments de taules es poden desfer i refer.
+- Un clic al llenç hi trasllada el focus: l'espai no torna a activar l'últim botó premut.
 - Alumnes **fixats** amb cadenat: no es mouen en tornar a assignar.
 
 ### Assignació automàtica
@@ -51,7 +52,9 @@ informa del percentatge de relacions acomplides.
 - Restriccions pròpies d'**ajuntar** i **separar** (importables del panell Relacions).
 - **Nivell de competència** opcional (0–10) i opció d'**equips heterogenis**.
 - Equips i alumnes bloquejables entre repartiments.
-- Taules d'equip col·locables al llenç, amb arrossegament d'alumnes entre equips.
+- El menú **Equips** activa el mode de formació sobre els mateixos pupitres de l'aula, amb contorns taronja subtils i el mateix zoom i desplaçament.
+- Formar o carregar equips agrupa els pupitres reals. **Organitzar taules** els torna a ordenar; reutilitza els pupitres, conserva els sobrants i afegeix els que falten per seure tots els membres.
+- Moviment manual de pupitres, seleccions o equips sencers des del control de la capçalera. Arrossega el nom d'un alumne a un altre equip o utilitza el selector del panell per canviar-lo de grup.
 - Equips desats amb nom i data, exportació a text i exportació de l'aula a PDF.
 
 ---

@@ -12,6 +12,7 @@ function setup(view = 'aula') {
     addEventListener(type, fn) { const key = this === area ? type : `doc:${type}`; listeners.set(key, [...(listeners.get(key) || []), fn]); },
     setPointerCapture() {}, hasPointerCapture: () => false, appendChild() {}, remove() {},
     closest: () => null,
+    focus() { document.activeElement = this; },
     getBoundingClientRect: () => ({ left: Number(id) * 100, top: 0, right: Number(id) * 100 + 90, bottom: 60 })
   });
   const area = node();
@@ -26,13 +27,13 @@ function setup(view = 'aula') {
     el: id => id.endsWith('Container') ? container : area,
     getData: () => data, getTeams: () => teams, isModalOpen: () => false,
     pushUndo: () => counters.undo++, saveState: () => counters.save++,
-    renderLayoutOptions() {}, renderDesks() {}, renderTeamsCanvas() {}, drawRelationLines() {} });
+    renderLayoutOptions() {}, renderDesks() {}, renderTeamsCanvas() {}, renderTeamOverlays() {}, drawRelationLines() {} });
   for (const file of ['ui', 'canvasselection']) vm.runInContext(readFileSync(path.join(__dirname, `../assets/js/${file}.js`), 'utf8'), context);
   const run = code => vm.runInContext(code, context);
   run(`currentCanvasView = '${view}'`);
   const event = (extra = {}) => ({ button: 0, pointerId: 1, clientX: 0, clientY: 0, target: node(), preventDefault() {}, stopPropagation() {}, ...extra });
   const fire = (type, extra) => { const e = event(extra); (listeners.get(type) || []).forEach(fn => fn(e)); return e; };
-  return { context, run, event, fire, data, teams, counters, nodes };
+  return { context, run, event, fire, data, teams, counters, nodes, document, area };
 }
 
 for (const view of ['aula', 'equips']) test(`${view}: group movement respects zoom, spacing, boundaries and one undo`, () => {
@@ -40,7 +41,7 @@ for (const view of ['aula', 'equips']) test(`${view}: group movement respects zo
   h.run("zoomLevel = 0.5; tableSelection.add('0'); tableSelection.add('1');");
   h.context.startTableMove(h.event(), '0');
   h.context.moveTableGesture(h.event({ clientX: 20, clientY: 10 }));
-  const positions = view === 'aula' ? h.data.desks : h.teams.positions;
+  const positions = h.data.desks;
   assert.equal(positions[0].x, 55);
   assert.equal(positions[1].x, 161);
   assert.equal(positions[2].x, 250);
@@ -99,7 +100,7 @@ test('mouse pans only with space; typing space leaves canvas alone', () => {
 test('modifier click toggles a table without starting movement', () => {
   const h = setup();
   h.context.initTableSelection();
-  const target = { closest: selector => selector === '.desk,.team-table' ? h.nodes[1] : null };
+  const target = { closest: selector => selector === '.desk' ? h.nodes[1] : null };
   h.fire('pointerdown', { target, ctrlKey: true });
   assert.equal(h.run("tableSelection.has('1')"), true);
   assert.equal(h.run('tableGesture'), null);
@@ -118,4 +119,20 @@ test('cancellation cleans up movement and ignores other pointers', () => {
   h.fire('pointercancel');
   assert.equal(h.run('tableGesture'), null);
   assert.deepEqual(h.counters, { undo: 0, save: 0 });
+});
+
+test('canvas click releases a previously focused button; space cannot repeat its action', () => {
+  const h = setup();
+  h.context.initCanvasInteractions();
+  h.document.activeElement = { tagName: 'BUTTON' };
+  h.fire('pointerdown');
+  h.fire('pointerup');
+  assert.equal(h.document.activeElement, h.area);
+  let prevented = false;
+  h.fire('doc:keydown', { code: 'Space', target: { closest: () => null }, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(h.run('spaceHeld'), true);
+  prevented = false;
+  h.fire('doc:keyup', { code: 'Space', preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
 });

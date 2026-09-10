@@ -187,6 +187,8 @@ function renderDesks() {
     el('relationSvg').innerHTML = '';
     el('deskCountLabel').textContent = 'Pupitres: 0';
     renderRelationScore();
+    renderTeamOverlays();
+    refreshTableSelection();
     return;
   }
 
@@ -204,20 +206,26 @@ function renderDesks() {
   const html = data.desks.map((desk, index) => {
     const studentId = data.assignments[desk.id];
     const student = studentId ? findStudent(studentId) : null;
-    const locked = !!data.lockedDesks[desk.id];
-    const dots = [...new Set(deskDots[desk.id] || [])].map(kind => `<div class="cdot ${kind}"></div>`).join('');
+    const teamIndex = currentCanvasView === 'equips' ? teamIndexForDesk(desk.id) : -1;
+    const inTeam = teamIndex >= 0;
+    const locked = inTeam ? getTeams().lockedStudents[studentId] !== undefined : !!data.lockedDesks[desk.id];
+    const lockAction = inTeam ? `toggleStudentLock('${esc(studentId)}',${teamIndex})` : `toggleDeskLock('${esc(desk.id)}')`;
+    const dots = currentCanvasView === 'equips' ? '' : [...new Set(deskDots[desk.id] || [])].map(kind => `<div class="cdot ${kind}"></div>`).join('');
     const occupied = !!student;
     return `<div class="desk ${occupied ? 'occupied' : 'empty'}${locked ? ' locked' : ''}"
-        style="left:${desk.x}px;top:${desk.y}px" data-did="${esc(desk.id)}"
+        style="left:${desk.x}px;top:${desk.y}px" data-did="${esc(desk.id)}" ${inTeam ? `data-team-idx="${teamIndex}"` : ''}
         ondragover="onDeskDragOver(event)" ondragleave="onDeskDragLeave(event)" ondrop="onDeskDrop(event,'${esc(desk.id)}')"
         onclick="onDeskClick('${esc(desk.id)}')">
       <span class="dlbl">${index + 1}</span>
       <div class="mv-btn" title="Moure pupitre" onpointerdown="onDeskMoveStart(event,'${esc(desk.id)}')"><span class="mi" style="font-size:10px">open_with</span></div>
       ${occupied ? `
         <button class="rm-btn" title="Treure alumne" onclick="event.stopPropagation();unseat('${esc(desk.id)}')"><span class="mi" style="font-size:10px">close</span></button>
-        <div class="dav" style="background:${esc(student.color)}">${esc(initialOf(student.name))}</div>
-        <div class="sname">${esc(student.name)}</div>
-        <button class="lock-btn" title="${locked ? 'Desbloquejar' : 'Fixar alumne'}" onclick="event.stopPropagation();toggleDeskLock('${esc(desk.id)}')"><span class="mi" style="font-size:10px">${locked ? 'lock' : 'lock_open'}</span></button>`
+        <div class="desk-student${inTeam ? ' team-table-member' : ''}" ${inTeam ? `draggable="${!locked}" ondragstart="onTeamMemberDragStart(event,'${esc(studentId)}',${teamIndex})" ondragend="onTeamMemberDragEnd(event)"` : ''}>
+          <div class="dav" style="background:${esc(student.color)}">${esc(initialOf(student.name))}</div>
+          <div class="sname">${esc(student.name)}</div>
+        </div>
+        ${inTeam ? `<div class="desk-team-label" title="${esc(teamName(teamIndex))}">${esc(teamName(teamIndex))}${getTeams().useCompetency ? ` · ${competencyOf(studentId)}` : ''}</div>` : ''}
+        <button class="lock-btn" title="${locked ? 'Desbloquejar' : inTeam ? 'Fixar a aquest equip' : 'Fixar alumne'}" onclick="event.stopPropagation();${lockAction}"><span class="mi" style="font-size:10px">${locked ? 'lock' : 'lock_open'}</span></button>`
       : '<div class="sname">Buit</div>'}
       <button class="del-desk-btn" title="Eliminar pupitre" onclick="event.stopPropagation();removeDeskById('${esc(desk.id)}')"><span class="mi" style="font-size:10px">delete</span></button>
       ${dots ? `<div class="cdots">${dots}</div>` : ''}
@@ -228,11 +236,13 @@ function renderDesks() {
   container.insertAdjacentHTML('beforeend', html);
   el('deskCountLabel').textContent = `Pupitres: ${data.desks.length}`;
   renderRelationScore(evaluation);
-  if (currentCanvasView === 'aula') refreshTableSelection();
+  refreshTableSelection();
+  renderTeamOverlays();
 }
 
 /** Dibuixa les línies entre alumnes relacionats que seuen a tocar. */
 function drawRelationLines(data) {
+  if (currentCanvasView === 'equips') { el('relationSvg').innerHTML = ''; return; }
   const lines = relationLines(data);
   const deskById = new Map(data.desks.map(d => [d.id, d]));
   const drawn = new Set();
@@ -265,6 +275,11 @@ function onStudentDragEnd(event) {
 }
 
 function onDeskDragOver(event) {
+  if (currentCanvasView === 'equips' && teamDrag.studentId !== null) {
+    const index = teamIndexForDesk(event.currentTarget.dataset.did);
+    if (index >= 0) onTeamDragOver(event, index);
+    return;
+  }
   if (!draggedStudentId) return;
   event.preventDefault();
   event.currentTarget.classList.add('drag-over-desk');
@@ -272,10 +287,16 @@ function onDeskDragOver(event) {
 
 function onDeskDragLeave(event) {
   event.currentTarget.classList.remove('drag-over-desk');
+  onTeamDragLeave(event);
 }
 
 /** Deixa anar un alumne sobre un pupitre; si està ocupat, els alumnes s'intercanvien. */
 function onDeskDrop(event, deskId) {
+  if (currentCanvasView === 'equips' && teamDrag.studentId !== null) {
+    const index = teamIndexForDesk(deskId);
+    if (index >= 0) onTeamDrop(event, index);
+    return;
+  }
   event.preventDefault();
   event.currentTarget.classList.remove('drag-over-desk');
   if (!draggedStudentId) return;
