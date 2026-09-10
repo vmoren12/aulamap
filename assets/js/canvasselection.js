@@ -10,7 +10,7 @@ function canvasTables() {
   const container = el('desksContainer');
   return [...container.querySelectorAll('.desk')].map(node => {
     const id = node.dataset.did;
-    const position = getData().desks.find(d => d.id === id);
+    const position = getCanvasData().desks.find(d => d.id === id);
     return { id, node, position };
   }).filter(item => item.position);
 }
@@ -20,11 +20,32 @@ function refreshTableSelection() {
   const ids = new Set(tables.map(item => item.id));
   for (const id of tableSelection) if (!ids.has(id)) tableSelection.delete(id);
   tables.forEach(({ id, node }) => node.classList.toggle('table-selected', tableSelection.has(id)));
+  updateSelectionActions();
 }
 
 function clearTableSelection() {
   tableSelection.clear();
   document.querySelectorAll('.table-selected').forEach(node => node.classList.remove('table-selected'));
+  updateSelectionActions();
+}
+
+function selectedTeamStudents() {
+  const layout = getTeamLayout();
+  return [...new Set([...tableSelection].map(id => layout.assignments[id]).filter(Boolean))];
+}
+
+function updateSelectionActions() {
+  const remove = el('deleteSelectedBtn');
+  if (remove) {
+    remove.hidden = !tableSelection.size;
+    remove.textContent = `Eliminar seleccionats (${tableSelection.size})`;
+  }
+  const move = el('moveSelectedTeam');
+  if (move) {
+    move.hidden = currentCanvasView !== 'equips' || !tableSelection.size;
+    move.innerHTML = '<option value="">Moure alumnes a…</option>' + (getTeams().groups || []).map((_, index) =>
+      `<option value="${index}"${getTeams().lockedTeams[index] ? ' disabled' : ''}>${esc(teamName(index))}</option>`).join('');
+  }
 }
 
 function startTableMove(event, id) {
@@ -91,7 +112,7 @@ function endTableGesture(event) {
     suppressCanvasClick = true;
     setTimeout(() => { suppressCanvasClick = false; }, 0);
     if (gesture.type === 'move') {
-      getData().layoutType = 'free';
+      getCanvasData().layoutType = 'free';
       renderLayoutOptions();
       renderDesks();
       saveState();
@@ -112,7 +133,8 @@ function initTableSelection() {
         event.stopPropagation();
         if (tableSelection.has(id)) tableSelection.delete(id); else tableSelection.add(id);
         refreshTableSelection();
-      } else if (!event.target.closest('button,input') && tableSelection.has(id)) {
+      } else if (!event.target.closest('button,input') && tableSelection.has(id) &&
+          !(currentCanvasView === 'equips' && event.target.closest('.desk-student'))) {
         startTableMove(event, id);
       }
       return;

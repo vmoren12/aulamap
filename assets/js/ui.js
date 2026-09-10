@@ -162,7 +162,7 @@ function zoomReset() {
   zoomLevel = isMobile() ? 0.7 : 1;
   const area = el('canvasArea');
   if (currentCanvasView === 'equips') {
-    const positions = getData().desks;
+    const positions = getTeamLayout().desks;
     if (positions.length && area) {
       const minX = Math.min(...positions.map(p => p.x));
       const minY = Math.min(...positions.map(p => p.y));
@@ -345,7 +345,12 @@ function initSidebarResize() {
 
 function initKeyboardShortcuts() {
   document.addEventListener('keydown', event => {
-    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !typing && !isModalOpen() && tableSelection.size) {
+      event.preventDefault();
+      removeSelectedDesks();
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
       event.preventDefault(); undo();
     } else if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))) {

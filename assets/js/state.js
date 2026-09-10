@@ -19,6 +19,7 @@ function defaultTeamsData() {
     groups: null,                 // [[studentId]]
     teamNames: {},                // { teamIndex: nom }
     positions: {},                // { teamIndex: {x,y} }
+    layout: null,                 // esquema de pupitres propi de la formació activa
     lockedTeams: {},              // { teamIndex: true }
     lockedStudents: {},           // { studentId: teamIndex }
     saved: [],                    // [{ id, name, date, groups, teamNames, competencies }]
@@ -50,6 +51,23 @@ function defaultState() {
 
 /* ── Normalització i migració ────────────────────────── */
 
+function normalizeTeamLayout(layout, validStudents) {
+  if (!layout || !Array.isArray(layout.desks)) return null;
+  const seenDesks = new Set(), seenStudents = new Set();
+  const result = { desks: [], assignments: {}, lockedDesks: {}, layoutType: 'free' };
+  layout.desks.forEach(desk => {
+    if (!desk || typeof desk !== 'object') return;
+    const student = layout.assignments?.[desk.id];
+    if (typeof desk.id !== 'string' || seenDesks.has(desk.id) || !validStudents.has(student) || seenStudents.has(student)) return;
+    if (!Number.isFinite(desk.x) || !Number.isFinite(desk.y)) return;
+    result.desks.push({ id: desk.id, x: Math.max(0, desk.x), y: Math.max(0, desk.y) });
+    result.assignments[desk.id] = student;
+    seenDesks.add(desk.id);
+    seenStudents.add(student);
+  });
+  return result;
+}
+
 /** Completa una configuració amb els camps que hi puguin faltar. */
 function normalizeConfigData(data) {
   const base = defaultConfigData();
@@ -80,6 +98,10 @@ function normalizeConfigData(data) {
 
   // Descarta referències a alumnes que ja no existeixen.
   const ids = new Set(out.students.map(s => s.id));
+  out.teams.layout = normalizeTeamLayout(out.teams.layout, new Set((out.teams.groups || []).flat().filter(id => ids.has(id))));
+  out.teams.saved.forEach(saved => {
+    saved.layout = normalizeTeamLayout(saved.layout, new Set(saved.groups.flat().filter(id => ids.has(id))));
+  });
   out.relations = out.relations
     .map(r => ({
       id: r.id || uid('rel'),

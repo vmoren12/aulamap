@@ -1,27 +1,40 @@
 /**
- * AulaMap — Mode d'equips sobre els pupitres de l'aula.
- * Agrupació, moviment i canvi de membres al mateix llenç.
+ * AulaMap — Esquemes d'equips independents de la distribució de l'aula.
  */
 'use strict';
 
+function getTeamLayout() {
+  const teams = getTeams();
+  if (!teams.layout) teams.layout = { desks: [], assignments: {}, lockedDesks: {}, layoutType: 'free' };
+  return teams.layout;
+}
+
+function getCanvasData() {
+  return currentCanvasView === 'equips' ? getTeamLayout() : getData();
+}
+
 function desksForTeam(index) {
-  const data = getData();
+  const data = getTeamLayout();
   const members = new Set(getTeams().groups?.[index] || []);
   return data.desks.filter(desk => members.has(data.assignments[desk.id]));
 }
 
 function teamIndexForDesk(deskId) {
-  const studentId = getData().assignments[deskId];
+  const studentId = getTeamLayout().assignments[deskId];
   return (getTeams().groups || []).findIndex(group => group.includes(studentId));
 }
 
-/** Seu els membres sense lloc, conservant els alumnes i cadenats dels pupitres ocupats. */
-function seatTeamMembers() {
-  const data = getData();
+/** Cada membre té un pupitre a l'esquema, independent del seu seient a l'aula. */
+function seatTeamMembers(studentIds = (getTeams().groups || []).flat()) {
+  const data = getTeamLayout();
+  const members = new Set((getTeams().groups || []).flat());
+  data.desks = data.desks.filter(desk => members.has(data.assignments[desk.id]));
+  const deskIds = new Set(data.desks.map(desk => desk.id));
+  Object.keys(data.assignments).forEach(id => { if (!deskIds.has(id)) delete data.assignments[id]; });
   const seated = new Set(data.desks.map(desk => data.assignments[desk.id]).filter(Boolean));
-  const valid = new Set(data.students.map(student => student.id));
+  const valid = new Set(getData().students.map(student => student.id));
   const free = data.desks.filter(desk => !data.assignments[desk.id]);
-  (getTeams().groups || []).flat().forEach(studentId => {
+  studentIds.forEach(studentId => {
     if (seated.has(studentId) || !valid.has(studentId)) return;
     let desk = free.shift();
     if (!desk) {
@@ -33,9 +46,9 @@ function seatTeamMembers() {
   });
 }
 
-/** Agrupa els pupitres reals; els sobrants es conserven al final. */
+/** Ordena només els pupitres de la formació activa. */
 function arrangeTeamDesks() {
-  const data = getData();
+  const data = getTeamLayout();
   const groups = getTeams().groups || [];
   if (!groups.length) return;
   seatTeamMembers();
@@ -79,12 +92,12 @@ function autoArrangeTeamDesks() {
 }
 
 /** Canviar de grup mou només el pupitre del membre a un lloc lliure proper. */
-function placeDeskWithTeam(studentId, index) {
-  seatTeamMembers();
-  const data = getData();
+function placeDeskWithTeam(studentId, index, movingIds = []) {
+  seatTeamMembers([studentId]);
+  const data = getTeamLayout();
   const desk = data.desks.find(item => data.assignments[item.id] === studentId);
   if (!desk) return;
-  const others = desksForTeam(index).filter(item => item !== desk);
+  const others = desksForTeam(index).filter(item => item !== desk && !movingIds.includes(data.assignments[item.id]));
   const originX = others.length ? Math.min(...others.map(item => item.x)) : 20;
   const originY = others.length ? Math.min(...others.map(item => item.y)) : Math.max(48, ...data.desks.map(item => item.y + DESK_H + 80));
   for (let slot = 0; ; slot++) {
@@ -99,6 +112,13 @@ function placeDeskWithTeam(studentId, index) {
 }
 
 function renderTeamsCanvas() {
+  if (currentCanvasView === 'equips' && !getTeams().layout) {
+    arrangeTeamDesks();
+    const teams = getTeams();
+    const saved = teams.saved[teams.activeSaved];
+    if (saved && !saved.layout) saved.layout = JSON.parse(JSON.stringify(teams.layout));
+    saveState();
+  }
   renderDesks();
   updateActiveTeamBadge();
   updateFabTeamsButton();
@@ -115,7 +135,7 @@ function renderTeamOverlays() {
   const teams = getTeams();
   const groups = teams.groups || [];
   const violations = teamViolations(groups);
-  const right = Math.max(20, ...getData().desks.map(desk => desk.x + DESK_W + 40));
+  const right = Math.max(20, ...getTeamLayout().desks.map(desk => desk.x + DESK_W + 40));
   container.insertAdjacentHTML('beforeend', groups.map((group, index) => {
     const desks = desksForTeam(index);
     const x = desks.length ? Math.min(...desks.map(desk => desk.x)) : right;
@@ -148,26 +168,35 @@ function onTeamMoveStart(event, index) {
   startTableMove(event, desks[0].id);
 }
 
-let teamDrag = { studentId: null, fromIndex: null };
+let teamDrag = { studentId: null, studentIds: [] };
 
 function onTeamMemberDragStart(event, studentId, fromIndex) {
   if (spaceHeld || tableGesture || getTeams().lockedStudents[studentId] !== undefined) { event.preventDefault(); return; }
-  teamDrag = { studentId, fromIndex };
+  const selected = selectedTeamStudents();
+  const studentIds = selected.includes(studentId) ? selected : [studentId];
+  if (studentIds.some(id => getTeams().lockedStudents[id] !== undefined)) {
+    event.preventDefault();
+    toast('La selecció conté alumnes fixats. Desbloqueja’ls abans de moure-la.', 'error');
+    return;
+  }
+  teamDrag = { studentId, studentIds };
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', studentId);
   event.target.closest('.team-table-member')?.classList.add('tm-dragging');
-  event.target.closest('.desk')?.classList.add('drag-source');
+  canvasTables().forEach(({ id, node }) => {
+    if (studentIds.includes(getTeamLayout().assignments[id])) node.classList.add('drag-source');
+  });
 }
 
 function onTeamMemberDragEnd(event) {
   event.target.closest('.team-table-member')?.classList.remove('tm-dragging');
   document.querySelectorAll('.drag-source,.drag-over-team')
           .forEach(node => node.classList.remove('drag-source', 'drag-over-team'));
-  teamDrag = { studentId: null, fromIndex: null };
+  teamDrag = { studentId: null, studentIds: [] };
 }
 
 function onTeamDragOver(event, toIndex) {
-  if (teamDrag.studentId === null || teamDrag.fromIndex === toIndex) return;
+  if (!teamDrag.studentIds.some(id => !getTeams().groups[toIndex]?.includes(id)) || getTeams().lockedTeams[toIndex]) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.currentTarget.classList.add('drag-over-team');
@@ -181,10 +210,9 @@ function onTeamDragLeave(event) {
 function onTeamDrop(event, toIndex) {
   event.preventDefault();
   event.currentTarget.classList.remove('drag-over-team');
-  const { studentId, fromIndex } = teamDrag;
-  if (studentId === null || fromIndex === null || fromIndex === toIndex) return;
-  if (moveStudentToTeam(studentId, fromIndex, toIndex)) toast(`${studentName(studentId)} → ${teamName(toIndex)}`, 'success');
-  teamDrag = { studentId: null, fromIndex: null };
+  const { studentIds } = teamDrag;
+  teamDrag = { studentId: null, studentIds: [] };
+  if (moveStudentsToTeam(studentIds, toIndex)) toast(`${pluralize(studentIds.length, 'alumne')} → ${teamName(toIndex)}`, 'success');
 }
 
 /* ── Indicadors ──────────────────────────────────────── */

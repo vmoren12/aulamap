@@ -38,6 +38,8 @@ function removeStudentFromTeams(teams, studentId) {
   });
   if (teams.groups) teams.groups = teams.groups.map(g => g.filter(id => id !== studentId));
   teams.saved.forEach(saved => { saved.groups = saved.groups.map(g => g.filter(id => id !== studentId)); });
+  teams.layout = normalizeTeamLayout(teams.layout, new Set((teams.groups || []).flat()));
+  teams.saved.forEach(saved => { saved.layout = normalizeTeamLayout(saved.layout, new Set(saved.groups.flat())); });
 }
 
 /* ── Planificació de mides ───────────────────────────── */
@@ -346,6 +348,7 @@ function doCreateTeams() {
   teams.lockedStudents = newLockedStudents;
   teams.teamNames = {};
   teams.positions = {};
+  teams.layout = null;
   teams.activeSaved = null;
   arrangeTeamDesks();
   saveState();
@@ -671,20 +674,32 @@ function renderTeamsSidebar(groups) {
 function moveStudentToTeam(studentId, fromIndex, toIndex) {
   const teams = getTeams();
   if (fromIndex === toIndex || !teams.groups?.[fromIndex]?.includes(studentId) || !teams.groups[toIndex]) return false;
+  return moveStudentsToTeam([studentId], toIndex);
+}
+
+/** Trasllat atòmic de la selecció: un únic desfer, sense saltar cadenats. */
+function moveStudentsToTeam(studentIds, toIndex) {
+  const teams = getTeams();
+  if (!teams.groups?.[toIndex]) return false;
+  const ids = [...new Set(studentIds)];
+  if (ids.some(id => !teams.groups.some(group => group.includes(id)))) return false;
+  const moving = ids.filter(id => !teams.groups[toIndex].includes(id));
+  if (!moving.length) return false;
   if (teams.lockedTeams[toIndex]) {
     toast(`${teamName(toIndex)} està bloquejat`, 'error');
     renderTeamsSidebar(teams.groups);
     return false;
   }
-  if (teams.lockedStudents[studentId] !== undefined) {
-    toast(`${studentName(studentId)} està fixat/da a ${teamName(fromIndex)}`, 'error');
+  if (moving.some(id => teams.lockedStudents[id] !== undefined || teams.lockedTeams[teams.groups.findIndex(group => group.includes(id))])) {
+    toast('La selecció conté alumnes fixats. Desbloqueja’ls abans de moure-la.', 'error');
     renderTeamsSidebar(teams.groups);
-    return;
+    return false;
   }
   saveWithUndo();
-  teams.groups[fromIndex] = teams.groups[fromIndex].filter(id => id !== studentId);
-  teams.groups[toIndex].push(studentId);
-  placeDeskWithTeam(studentId, toIndex);
+  const movingSet = new Set(moving);
+  teams.groups = teams.groups.map(group => group.filter(id => !movingSet.has(id)));
+  teams.groups[toIndex].push(...moving);
+  moving.forEach((id, index) => placeDeskWithTeam(id, toIndex, moving.slice(index)));
   saveState();
   renderLayoutOptions();
   renderStudentList();
@@ -772,7 +787,8 @@ function teamsHaveUnsavedChanges() {
     if (a !== b) return true;
   }
   const savedNames = saved.teamNames || {};
-  return teams.groups.some((_, i) => (teams.teamNames[i] || '') !== (savedNames[i] || ''));
+  return teams.groups.some((_, i) => (teams.teamNames[i] || '') !== (savedNames[i] || '')) ||
+    (!!saved.layout && JSON.stringify(saved.layout) !== JSON.stringify(teams.layout));
 }
 
 function guardUnsavedTeams(onContinue) {
@@ -812,6 +828,7 @@ function writeSavedTeam(target, name) {
   target.groups = teams.groups.map(group => [...group]);
   target.teamNames = { ...teams.teamNames };
   target.competencies = teams.useCompetency ? { ...teams.competencies } : null;
+  target.layout = JSON.parse(JSON.stringify(getTeamLayout()));
 }
 
 function saveCurrentTeam() {
@@ -920,7 +937,11 @@ function loadSavedTeam(index) {
     teams.lockedStudents = {};
     teams.positions = {};
     teams.activeSaved = index;
-    arrangeTeamDesks();
+    teams.layout = saved.layout ? JSON.parse(JSON.stringify(saved.layout)) : null;
+    if (!teams.layout) {
+      arrangeTeamDesks();
+      saved.layout = JSON.parse(JSON.stringify(teams.layout));
+    }
     saveState();
     clearTableSelection();
     renderLayoutOptions();

@@ -19,13 +19,14 @@ function setup(view = 'aula') {
   const nodes = [node('0'), node('1'), node('2')];
   const desks = [{ id: '0', x: 15, y: 20 }, { id: '1', x: 121, y: 25 }, { id: '2', x: 250, y: 20 }];
   const data = { desks, layoutType: 'rows' };
-  const teams = { positions: Object.fromEntries(desks.map(d => [d.id, { x: d.x, y: d.y }])) };
+  const teams = { layout: { desks: desks.map(d => ({ ...d })), assignments: {} } };
   const counters = { undo: 0, save: 0 };
   const container = { querySelectorAll: () => nodes };
   const document = { ...node(), querySelectorAll: () => nodes, createElement: () => node() };
   const context = vm.createContext({ document, window: node(), setTimeout: () => {},
     el: id => id.endsWith('Container') ? container : area,
     getData: () => data, getTeams: () => teams, isModalOpen: () => false,
+    getCanvasData: () => view === 'equips' ? teams.layout : data,
     pushUndo: () => counters.undo++, saveState: () => counters.save++,
     renderLayoutOptions() {}, renderDesks() {}, renderTeamsCanvas() {}, renderTeamOverlays() {}, drawRelationLines() {} });
   for (const file of ['ui', 'canvasselection']) vm.runInContext(readFileSync(path.join(__dirname, `../assets/js/${file}.js`), 'utf8'), context);
@@ -41,7 +42,7 @@ for (const view of ['aula', 'equips']) test(`${view}: group movement respects zo
   h.run("zoomLevel = 0.5; tableSelection.add('0'); tableSelection.add('1');");
   h.context.startTableMove(h.event(), '0');
   h.context.moveTableGesture(h.event({ clientX: 20, clientY: 10 }));
-  const positions = h.data.desks;
+  const positions = view === 'equips' ? h.teams.layout.desks : h.data.desks;
   assert.equal(positions[0].x, 55);
   assert.equal(positions[1].x, 161);
   assert.equal(positions[2].x, 250);

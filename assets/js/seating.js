@@ -165,20 +165,38 @@ function addFreeDesk() {
 }
 
 function removeDeskById(id) {
-  const data = getData();
+  removeDesksByIds([id]);
+}
+
+function removeSelectedDesks() {
+  removeDesksByIds([...tableSelection]);
+}
+
+function removeDesksByIds(ids) {
+  const data = getCanvasData();
+  const selected = new Set(ids.filter(id => data.desks.some(desk => desk.id === id)));
+  if (!selected.size) return;
+  endTableGesture();
   saveWithUndo();
-  data.desks = data.desks.filter(d => d.id !== id);
-  delete data.assignments[id];
-  delete data.lockedDesks[id];
+  data.desks = data.desks.filter(d => !selected.has(d.id));
+  selected.forEach(id => {
+    delete data.assignments[id];
+    delete data.lockedDesks[id];
+  });
+  data.layoutType = 'free';
+  clearTableSelection();
   saveState();
+  renderLayoutOptions();
   renderDesks();
+  renderStudentList();
+  renderRelationsPanel();
   updateCounts();
 }
 
 /* ── Dibuix ──────────────────────────────────────────── */
 
 function renderDesks() {
-  const data = getData();
+  const data = getCanvasData();
   const container = el('desksContainer');
 
   if (!data.desks.length && data.layoutType !== 'free') { generateDesks(); saveState(); }
@@ -197,8 +215,8 @@ function renderDesks() {
   container.style.width = (maxX + 40) + 'px';
   container.style.height = (maxY + 40) + 'px';
 
-  const evaluation = evaluateRelations(data);
-  const deskDots = relationDots(data, evaluation);
+  const evaluation = currentCanvasView === 'aula' ? evaluateRelations(data) : null;
+  const deskDots = evaluation ? relationDots(data, evaluation) : {};
   drawRelationLines(data);
   el('relationSvg').setAttribute('width', maxX + 40);
   el('relationSvg').setAttribute('height', maxY + 40);
@@ -219,7 +237,7 @@ function renderDesks() {
       <span class="dlbl">${index + 1}</span>
       <div class="mv-btn" title="Moure pupitre" onpointerdown="onDeskMoveStart(event,'${esc(desk.id)}')"><span class="mi" style="font-size:10px">open_with</span></div>
       ${occupied ? `
-        <button class="rm-btn" title="Treure alumne" onclick="event.stopPropagation();unseat('${esc(desk.id)}')"><span class="mi" style="font-size:10px">close</span></button>
+        ${currentCanvasView === 'aula' ? `<button class="rm-btn" title="Treure alumne" onclick="event.stopPropagation();unseat('${esc(desk.id)}')"><span class="mi" style="font-size:10px">close</span></button>` : ''}
         <div class="desk-student${inTeam ? ' team-table-member' : ''}" ${inTeam ? `draggable="${!locked}" ondragstart="onTeamMemberDragStart(event,'${esc(studentId)}',${teamIndex})" ondragend="onTeamMemberDragEnd(event)"` : ''}>
           <div class="dav" style="background:${esc(student.color)}">${esc(initialOf(student.name))}</div>
           <div class="sname">${esc(student.name)}</div>
@@ -235,7 +253,7 @@ function renderDesks() {
   container.querySelectorAll('.desk').forEach(node => node.remove());
   container.insertAdjacentHTML('beforeend', html);
   el('deskCountLabel').textContent = `Pupitres: ${data.desks.length}`;
-  renderRelationScore(evaluation);
+  if (evaluation) renderRelationScore(evaluation);
   refreshTableSelection();
   renderTeamOverlays();
 }
@@ -275,7 +293,8 @@ function onStudentDragEnd(event) {
 }
 
 function onDeskDragOver(event) {
-  if (currentCanvasView === 'equips' && teamDrag.studentId !== null) {
+  if (currentCanvasView === 'equips') {
+    if (teamDrag.studentId === null) return;
     const index = teamIndexForDesk(event.currentTarget.dataset.did);
     if (index >= 0) onTeamDragOver(event, index);
     return;
@@ -292,7 +311,8 @@ function onDeskDragLeave(event) {
 
 /** Deixa anar un alumne sobre un pupitre; si està ocupat, els alumnes s'intercanvien. */
 function onDeskDrop(event, deskId) {
-  if (currentCanvasView === 'equips' && teamDrag.studentId !== null) {
+  if (currentCanvasView === 'equips') {
+    if (teamDrag.studentId === null) return;
     const index = teamIndexForDesk(deskId);
     if (index >= 0) onTeamDrop(event, index);
     return;
@@ -316,6 +336,7 @@ function onDeskDrop(event, deskId) {
 }
 
 function onDeskClick(deskId) {
+  if (currentCanvasView === 'equips') return;
   const data = getData();
   if (data.assignments[deskId]) return;
   const seated = new Set(Object.values(data.assignments));

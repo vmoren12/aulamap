@@ -238,6 +238,8 @@
       <span class="toolbar-label" id="toolbarAulaTools">Eines:</span>
       <button class="btn btn-sm" id="toolbarClearBtn" onclick="clearAllSeats()"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
       <button class="btn btn-sm" id="arrangeTeamsBtn" onclick="autoArrangeTeamDesks()" style="display:none"><span class="mi mi-xs">dashboard</span> Organitzar taules</button>
+      <button class="btn btn-sm" id="deleteSelectedBtn" onclick="removeSelectedDesks()" title="Eliminar els pupitres seleccionats (Supr). Els alumnes es conserven." hidden>Eliminar seleccionats</button>
+      <select id="moveSelectedTeam" aria-label="Moure els alumnes seleccionats a un equip" onchange="if(this.value !== '') moveStudentsToTeam(selectedTeamStudents(), Number(this.value))" hidden></select>
       <div class="toolbar-sep" id="toolbarSep1"></div>
       <span class="toolbar-label" id="deskCountLabel">Pupitres: 0</span>
       <div style="flex:1"></div>

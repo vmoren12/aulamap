@@ -14,11 +14,12 @@ function setup(sizes, deskCount, mobile = false) {
   students.slice(0, deskCount).forEach((student, i) => { data.assignments[`d${i}`] = student.id; });
   const context = vm.createContext({ getData: () => data, getTeams: () => data.teams,
     uid: () => `new${next++}`, DESK_W: 100, DESK_H: 64, isMobile: () => mobile, centerDesks() {},
-    saveWithUndo() {}, saveState() {}, renderLayoutOptions() {}, renderStudentList() {}, updateCounts() {},
+    saveWithUndo() { undoCount++; }, saveState() {}, renderLayoutOptions() {}, renderStudentList() {}, updateCounts() {},
     toast() {}, studentName: id => id });
+  let undoCount = 0;
   for (const name of ['teams', 'teamscanvas']) vm.runInContext(readFileSync(path.join(__dirname, `../assets/js/${name}.js`), 'utf8'), context);
   vm.runInContext('renderTeamsSidebar = () => {}; renderTeamsCanvas = () => {};', context);
-  return { data, context };
+  return { data, context, undoCount: () => undoCount };
 }
 
 function assertNoOverlaps(desks) {
@@ -28,21 +29,19 @@ function assertNoOverlaps(desks) {
   }
 }
 
-for (const mobile of [false, true]) test(`uneven teams reuse desks and add only missing seats (${mobile ? 'mobile' : 'desktop'})`, () => {
+for (const mobile of [false, true]) test(`team diagrams stay independent of classroom seats (${mobile ? 'mobile' : 'desktop'})`, () => {
   const { context, data } = setup([3, 7, 2, 5], 12, mobile);
-  const existing = data.desks.slice();
-  const assigned = { ...data.assignments };
   data.lockedDesks.d0 = true;
+  const classroom = JSON.stringify({ desks: data.desks, assignments: data.assignments, lockedDesks: data.lockedDesks, layoutType: data.layoutType });
   context.arrangeTeamDesks();
-  assert.equal(data.desks.length, 17);
-  existing.forEach((desk, i) => assert.equal(data.desks[i], desk));
-  Object.entries(assigned).forEach(([id, student]) => assert.equal(data.assignments[id], student));
-  assert.equal(data.lockedDesks.d0, true);
-  assert.equal(new Set(Object.values(data.assignments)).size, 17);
-  assertNoOverlaps(data.desks);
-  const arranged = JSON.stringify(data.desks);
+  const layout = data.teams.layout;
+  assert.equal(layout.desks.length, 17);
+  assert.equal(new Set(Object.values(layout.assignments)).size, 17);
+  assertNoOverlaps(layout.desks);
+  const arranged = JSON.stringify(layout.desks);
   context.arrangeTeamDesks();
-  assert.equal(JSON.stringify(data.desks), arranged);
+  assert.equal(JSON.stringify(layout.desks), arranged);
+  assert.equal(JSON.stringify({ desks: data.desks, assignments: data.assignments, lockedDesks: data.lockedDesks, layoutType: data.layoutType }), classroom);
 });
 
 test('surplus desks remain available, and empty teams do not break arrangement', () => {
@@ -50,21 +49,45 @@ test('surplus desks remain available, and empty teams do not break arrangement',
   context.arrangeTeamDesks();
   assert.equal(data.desks.length, 10);
   assert.equal(Object.keys(data.assignments).length, 5);
+  assert.equal(data.teams.layout.desks.length, 5);
+  assert.equal(context.desksForTeam(1).length, 0);
   assertNoOverlaps(data.desks);
 });
 
 test('manual team change moves only that student desk and preserves assignments', () => {
   const { context, data } = setup([3, 3], 8);
   context.arrangeTeamDesks();
-  const before = JSON.parse(JSON.stringify(data.desks));
-  const assignments = JSON.stringify(data.assignments);
+  const layout = data.teams.layout;
+  const before = JSON.parse(JSON.stringify(layout.desks));
+  const assignments = JSON.stringify(layout.assignments);
   assert.equal(context.moveStudentToTeam('s0', 0, 1), true);
   assert.equal(data.teams.groups[0].includes('s0'), false);
   assert.equal(data.teams.groups[1].includes('s0'), true);
-  data.desks.slice(1).forEach((desk, i) => assert.deepEqual(desk, before[i + 1]));
-  assert.notDeepEqual(data.desks[0], before[0]);
-  assert.equal(JSON.stringify(data.assignments), assignments);
-  assertNoOverlaps(data.desks);
+  assert.equal(JSON.stringify(layout.desks.slice(1)), JSON.stringify(before.slice(1)));
+  assert.notDeepEqual(layout.desks[0], before[0]);
+  assert.equal(JSON.stringify(layout.assignments), assignments);
+  assertNoOverlaps(layout.desks);
+});
+
+test('moving students from multiple teams to an empty team is one atomic undo', () => {
+  const h = setup([3, 3, 0], 6);
+  h.context.arrangeTeamDesks();
+  const classroom = JSON.stringify(h.data.desks);
+  assert.equal(h.context.moveStudentsToTeam(['s0', 's3', 's0'], 2), true);
+  assert.equal(JSON.stringify(h.data.teams.groups), JSON.stringify([['s1', 's2'], ['s4', 's5'], ['s0', 's3']]));
+  assert.equal(h.undoCount(), 1);
+  assertNoOverlaps(h.data.teams.layout.desks);
+  assert.equal(JSON.stringify(h.data.desks), classroom);
+});
+
+test('a locked member prevents partial transfer of a multiple selection', () => {
+  const h = setup([3, 3], 6);
+  h.context.arrangeTeamDesks();
+  h.data.teams.lockedStudents.s1 = 0;
+  const before = JSON.stringify(h.data);
+  assert.equal(h.context.moveStudentsToTeam(['s0', 's1'], 1), false);
+  assert.equal(JSON.stringify(h.data), before);
+  assert.equal(h.undoCount(), 0);
 });
 
 test('locked students, locked destination teams and stale moves do not mutate desks or groups', () => {
