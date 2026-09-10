@@ -36,6 +36,8 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 - Plantilles: files, parelles, forma d'U, illes de 4, illes de 6, cercle i distribució lliure.
 - Files, columnes i espaiat configurables; pupitres moguts a mà, afegits o eliminats.
 - Taula del professorat a dalt o a baix, zoom, enquadrament i desplaçament del llenç.
+- Selecció múltiple a Aula i Equips: arrossega el fons per seleccionar amb un rectangle, o fes Majúscules/Ctrl (Cmd a Mac) + clic per afegir o treure taules. Arrossega una taula seleccionada o el seu control de moviment per moure el conjunt. Esc o un clic al fons desmarca la selecció.
+- Desplaçament del llenç amb espai sostingut + arrossegament del ratolí; en pantalles tàctils, arrossega el fons amb un dit. Els moviments de taules es poden desfer i refer.
 - Alumnes **fixats** amb cadenat: no es mouen en tornar a assignar.
 
 ### Assignació automàtica

@@ -228,6 +228,7 @@ function renderDesks() {
   container.insertAdjacentHTML('beforeend', html);
   el('deskCountLabel').textContent = `Pupitres: ${data.desks.length}`;
   renderRelationScore(evaluation);
+  if (currentCanvasView === 'aula') refreshTableSelection();
 }
 
 /** Dibuixa les línies entre alumnes relacionats que seuen a tocar. */
@@ -363,53 +364,8 @@ function clearAllSeats() {
 
 /* ── Moviment de pupitres ────────────────────────────── */
 
-let deskMove = { id: null, offsetX: 0, offsetY: 0, node: null, undoPushed: false };
-
 function onDeskMoveStart(event, deskId) {
-  event.stopPropagation();
-  event.preventDefault();
-  const desk = getData().desks.find(d => d.id === deskId);
-  if (!desk) return;
-  const container = el('desksContainer');
-  const rect = container.getBoundingClientRect();
-  deskMove = {
-    id: deskId,
-    offsetX: (event.clientX - rect.left) / zoomLevel - desk.x,
-    offsetY: (event.clientY - rect.top) / zoomLevel - desk.y,
-    node: container.querySelector(`.desk[data-did="${CSS.escape(deskId)}"]`),
-    undoPushed: false
-  };
-  deskMove.node?.classList.add('moving');
-  deskMove.node?.setPointerCapture(event.pointerId);
-  document.addEventListener('pointermove', onDeskMoveMove);
-  document.addEventListener('pointerup', onDeskMoveEnd);
-}
-
-function onDeskMoveMove(event) {
-  if (!deskMove.id) return;
-  if (!deskMove.undoPushed) { pushUndo(); deskMove.undoPushed = true; }
-  const data = getData();
-  const desk = data.desks.find(d => d.id === deskMove.id);
-  if (!desk || !deskMove.node) return;
-  const rect = el('desksContainer').getBoundingClientRect();
-  desk.x = Math.max(0, Math.round(((event.clientX - rect.left) / zoomLevel - deskMove.offsetX) / 10) * 10);
-  desk.y = Math.max(0, Math.round(((event.clientY - rect.top) / zoomLevel - deskMove.offsetY) / 10) * 10);
-  deskMove.node.style.left = desk.x + 'px';
-  deskMove.node.style.top = desk.y + 'px';
-  drawRelationLines(data);
-}
-
-function onDeskMoveEnd() {
-  if (!deskMove.id) return;
-  deskMove.node?.classList.remove('moving');
-  deskMove = { id: null, offsetX: 0, offsetY: 0, node: null, undoPushed: false };
-  document.removeEventListener('pointermove', onDeskMoveMove);
-  document.removeEventListener('pointerup', onDeskMoveEnd);
-  const data = getData();
-  data.layoutType = 'free';
-  saveState();
-  renderLayoutOptions();
-  renderDesks();
+  startTableMove(event, deskId);
 }
 
 /* ── Taula del professorat ───────────────────────────── */

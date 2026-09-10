@@ -79,48 +79,14 @@ function renderTeamsCanvas() {
   container.style.width = Math.max(maxX + 60, 800) + 'px';
   container.style.height = Math.max(maxY + 60, 600) + 'px';
   container.innerHTML = html;
+  if (currentCanvasView === 'equips') refreshTableSelection();
   updateFabTeamsButton();
 }
 
 /* ── Moviment de les taules d'equip ──────────────────── */
 
-let teamMove = { index: null, offsetX: 0, offsetY: 0, node: null };
-
 function onTeamMoveStart(event, index) {
-  event.stopPropagation();
-  event.preventDefault();
-  const teams = getTeams();
-  const position = teams.positions[index] || { x: 0, y: 0 };
-  const container = el('teamsContainer');
-  const rect = container.getBoundingClientRect();
-  teamMove = {
-    index,
-    offsetX: (event.clientX - rect.left) / zoomLevel - position.x,
-    offsetY: (event.clientY - rect.top) / zoomLevel - position.y,
-    node: container.querySelector(`.team-table[data-team-idx="${index}"]`)
-  };
-  teamMove.node?.classList.add('moving');
-  teamMove.node?.setPointerCapture(event.pointerId);
-  document.addEventListener('pointermove', onTeamMoveMove);
-  document.addEventListener('pointerup', onTeamMoveEnd);
-}
-
-function onTeamMoveMove(event) {
-  if (teamMove.index === null) return;
-  const rect = el('teamsContainer').getBoundingClientRect();
-  const x = Math.max(0, Math.round(((event.clientX - rect.left) / zoomLevel - teamMove.offsetX) / 10) * 10);
-  const y = Math.max(0, Math.round(((event.clientY - rect.top) / zoomLevel - teamMove.offsetY) / 10) * 10);
-  getTeams().positions[teamMove.index] = { x, y };
-  if (teamMove.node) { teamMove.node.style.left = x + 'px'; teamMove.node.style.top = y + 'px'; }
-}
-
-function onTeamMoveEnd() {
-  if (teamMove.index === null) return;
-  teamMove.node?.classList.remove('moving');
-  teamMove = { index: null, offsetX: 0, offsetY: 0, node: null };
-  document.removeEventListener('pointermove', onTeamMoveMove);
-  document.removeEventListener('pointerup', onTeamMoveEnd);
-  saveState();
+  startTableMove(event, index);
 }
 
 /* ── Arrossegament d'alumnes entre equips ────────────── */

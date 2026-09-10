@@ -6,7 +6,7 @@
 .toolbar-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;}
 
 .canvas-wrap{flex:1;overflow:hidden;position:relative;min-height:0;}
-.canvas-area{width:100%;height:100%;overflow:hidden;position:relative;cursor:grab;touch-action:none;}
+.canvas-area{width:100%;height:100%;overflow:hidden;position:relative;cursor:default;touch-action:none;}
 .canvas-area.panning{cursor:grabbing;}
 .canvas-inner{transform-origin:0 0;position:relative;min-width:2000px;min-height:2000px;
   background:radial-gradient(circle at 50% 50%,rgba(108,142,239,0.03) 0%,transparent 70%),
@@ -90,3 +90,10 @@
 .zoom-controls .btn-icon{background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);width:28px;height:28px;}
 .zoom-label{font-size:9px;text-align:center;color:var(--text2);font-family:var(--mono);font-weight:600;line-height:1;padding:1px 0;}
 
+
+/* Selecció múltiple i desplaçament amb espai */
+.canvas-area.pan-ready,.canvas-area.pan-ready *{cursor:grab!important;}
+.canvas-area.panning,.canvas-area.panning *{cursor:grabbing!important;}
+.desk.table-selected,.team-table.table-selected{outline:3px solid var(--accent);outline-offset:3px;}
+.desk.table-selected .mv-btn{display:flex;}
+.selection-marquee{position:absolute;pointer-events:none;border:1px solid var(--accent);background:var(--accent-glow);z-index:1000;}

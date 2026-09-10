@@ -21,6 +21,8 @@ const ZOOM_MAX = 2;
 
 /** Torna a pintar tota la interfície a partir de l'estat actual. */
 function renderAll() {
+  endTableGesture();
+  clearTableSelection();
   const data = getData();
   renderDocentSelect();
   renderConfigSelect();
@@ -127,6 +129,8 @@ function closeHeaderMenuOutside(event) {
 
 function switchCanvasView(view) {
   if (view === currentCanvasView) return;
+  endTableGesture();
+  clearTableSelection();
   saveViewPanZoom();
   currentCanvasView = view;
 
@@ -227,6 +231,7 @@ function initCanvasInteractions() {
 
   area.addEventListener('wheel', event => {
     event.preventDefault();
+    if (tableGesture) return;
     zoomAt(zoomLevel + (event.deltaY > 0 ? -0.07 : 0.07), event.clientX, event.clientY);
   }, { passive: false });
 
@@ -238,6 +243,8 @@ function initCanvasInteractions() {
 
   area.addEventListener('touchstart', event => {
     if (event.touches.length !== 2) return;
+    endTableGesture();
+    endPan();
     event.preventDefault();
     pinchDistance = touchDistance(event.touches[0], event.touches[1]);
     pinchZoom = zoomLevel;
@@ -252,11 +259,16 @@ function initCanvasInteractions() {
   }, { passive: false });
 
   let panning = false;
+  let panPointer = null;
   let startX = 0, startY = 0, startPanX = 0, startPanY = 0;
-  const noPanSelector = '.desk,.team-table-member,.team-mv,.team-title,button,input,select,textarea';
+  const noPanSelector = '.desk,.team-table,button,input,select,textarea';
 
   area.addEventListener('pointerdown', event => {
-    if (event.target.closest(noPanSelector)) return;
+    if (event.button !== 0 || panning || tableGesture) return;
+    if (!spaceHeld && !(event.pointerType === 'touch' && !event.target.closest(noPanSelector))) return;
+    if (event.target.closest('input,select,textarea')) return;
+    event.stopPropagation();
+    panPointer = event.pointerId;
     if (document.activeElement?.tagName === 'INPUT') document.activeElement.blur();
     panning = true;
     startX = event.clientX; startY = event.clientY;
@@ -264,10 +276,10 @@ function initCanvasInteractions() {
     area.classList.add('panning');
     area.setPointerCapture(event.pointerId);
     event.preventDefault();
-  });
+  }, true);
 
   area.addEventListener('pointermove', event => {
-    if (!panning) return;
+    if (!panning || event.pointerId !== panPointer) return;
     panX = startPanX + (event.clientX - startX);
     panY = startPanY + (event.clientY - startY);
     applyZoom();
@@ -276,11 +288,35 @@ function initCanvasInteractions() {
   const endPan = () => {
     if (!panning) return;
     panning = false;
+    if (area.hasPointerCapture(panPointer)) area.releasePointerCapture(panPointer);
+    panPointer = null;
+    suppressCanvasClick = true;
+    setTimeout(() => { suppressCanvasClick = false; }, 0);
     saveViewPanZoom();
     area.classList.remove('panning');
   };
   area.addEventListener('pointerup', endPan);
   area.addEventListener('pointercancel', endPan);
+  area.addEventListener('lostpointercapture', endPan);
+  document.addEventListener('keydown', event => {
+    if (event.code === 'Space' && !event.target.closest('input,textarea,select,[contenteditable="true"],button') && !isModalOpen()) {
+      event.preventDefault();
+      spaceHeld = true;
+      area.classList.add('pan-ready');
+    }
+    if (event.key === 'Escape' && !isModalOpen()) {
+      endTableGesture();
+      clearTableSelection();
+    }
+  });
+  const releaseSpace = () => {
+    spaceHeld = false;
+    area.classList.remove('pan-ready');
+    endPan();
+  };
+  document.addEventListener('keyup', event => { if (event.code === 'Space') releaseSpace(); });
+  window.addEventListener('blur', releaseSpace);
+  initTableSelection();
 }
 
 /* ── Amplada de la barra lateral (escriptori) ────────── */
