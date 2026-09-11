@@ -4,28 +4,42 @@
  * Formació d'equips a partir dels alumnes de la configuració activa, amb
  * conjunts d'"ajuntar" i "separar", nivells de competència opcionals i equips
  * o alumnes bloquejats que es mantenen entre repartiments.
+ *
+ * Els equips són independents de la distribució de l'aula: no comparteixen ni
+ * pupitres ni assignacions amb el llenç d'Aula.
  */
+(function (A) {
 'use strict';
+
+const { el, esc, uid, toast, pluralize, openModal, closeModal, focusModalField, appConfirm,
+        REL_TOGETHER, REL_SEPARATE, REL_LABEL } = A;
 
 const TEAM_ATTEMPTS = 60;        // intents de repartiment abans de rendir-se
 const TEAM_HETERO_TARGET = 0.15; // variància acceptable entre nivells mitjans
 
 /* ── Utilitats de dades ──────────────────────────────── */
 
-function teamStudents() { return getData().students; }
+function teamStudents() { return A.getData().students; }
 
 function teamName(index) {
-  return getTeams().teamNames[index] || `Equip ${index + 1}`;
+  return A.getTeams().teamNames[index] || `Equip ${index + 1}`;
 }
 
 function competencyOf(studentId) {
-  const value = getTeams().competencies[studentId];
+  const value = A.getTeams().competencies[studentId];
   return typeof value === 'number' ? value : 5;
 }
 
 function groupMean(group) {
   if (!group.length) return 0;
   return group.reduce((sum, id) => sum + competencyOf(id), 0) / group.length;
+}
+
+/** Equip al qual pertany un alumne, o -1. */
+function teamIndexOf(studentId) {
+  const groups = A.getTeams().groups;
+  if (!groups) return -1;
+  return groups.findIndex(group => group.includes(studentId));
 }
 
 /** Treu un alumne de tota la informació d'equips. */
@@ -38,8 +52,8 @@ function removeStudentFromTeams(teams, studentId) {
   });
   if (teams.groups) teams.groups = teams.groups.map(g => g.filter(id => id !== studentId));
   teams.saved.forEach(saved => { saved.groups = saved.groups.map(g => g.filter(id => id !== studentId)); });
-  teams.layout = normalizeTeamLayout(teams.layout, new Set((teams.groups || []).flat()));
-  teams.saved.forEach(saved => { saved.layout = normalizeTeamLayout(saved.layout, new Set(saved.groups.flat())); });
+  teams.layout = A.normalizeTeamLayout(teams.layout, new Set((teams.groups || []).flat()));
+  teams.saved.forEach(saved => { saved.layout = A.normalizeTeamLayout(saved.layout, new Set(saved.groups.flat())); });
 }
 
 /* ── Planificació de mides ───────────────────────────── */
@@ -49,7 +63,7 @@ function removeStudentFromTeams(teams, studentId) {
  * @returns {{total:number, size:number, remainder:number, sizes:number[]}}
  */
 function teamPlan() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const total = teamStudents().length;
   const size = Math.max(1, Math.min(teams.studentsPerGroup || 1, Math.max(1, total)));
   if (!total) return { total: 0, size, remainder: 0, sizes: [] };
@@ -74,7 +88,7 @@ function teamPlan() {
 
 /** Uneix els conjunts d'"ajuntar" que comparteixen alumnes. */
 function unifiedTogetherSets() {
-  const sets = getTeams().constraints.together.map(set => new Set(set.students));
+  const sets = A.getTeams().constraints.together.map(set => new Set(set.students));
   let merged = true;
   while (merged) {
     merged = false;
@@ -94,7 +108,7 @@ function unifiedTogetherSets() {
 
 /** Contradiccions entre conjunts d'ajuntar i de separar. */
 function teamContradictions() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const unified = unifiedTogetherSets();
   const conflicts = [];
   unified.forEach(group => {
@@ -108,7 +122,7 @@ function teamContradictions() {
 
 /** Motius pels quals no es pot repartir; llista buida vol dir que tot és correcte. */
 function teamValidationErrors() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const plan = teamPlan();
   const errors = [];
 
@@ -120,7 +134,7 @@ function teamValidationErrors() {
     const maxSize = Math.max(...plan.sizes);
     unifiedTogetherSets().forEach(group => {
       if (group.length > maxSize) {
-        errors.push(`El conjunt d'ajuntar amb ${group.map(studentName).join(', ')} té ${group.length} alumnes i l'equip més gran en té ${maxSize}.`);
+        errors.push(`El conjunt d'ajuntar amb ${group.map(A.studentName).join(', ')} té ${group.length} alumnes i l'equip més gran en té ${maxSize}.`);
       }
     });
     teams.constraints.separate.forEach(set => {
@@ -130,7 +144,7 @@ function teamValidationErrors() {
     });
   }
   teamContradictions().forEach(shared => {
-    errors.push(`${shared.map(studentName).join(' i ')} han d'estar separats però algun conjunt d'ajuntar els uneix.`);
+    errors.push(`${shared.map(A.studentName).join(' i ')} han d'estar separats però algun conjunt d'ajuntar els uneix.`);
   });
   return errors;
 }
@@ -145,7 +159,7 @@ function teamValidationErrors() {
  * @returns {string[][]|null}
  */
 function buildTeams(sizes, lockedGroups, strict = true) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const hetero = teams.heterogeneous && teams.useCompetency;
   const groups = sizes.map(() => []);
   const capacity = sizes.slice();
@@ -177,7 +191,7 @@ function buildTeams(sizes, lockedGroups, strict = true) {
     .filter(group => group.length)
     .sort((a, b) => b.length - a.length);
   for (const group of unified) {
-    const order = shuffleArray(groups.map((_, i) => i))
+    const order = A.shuffleArray(groups.map((_, i) => i))
       .filter(i => !fullyLocked.has(i))
       .sort((a, b) => (capacity[b] - groups[b].length) - (capacity[a] - groups[a].length));
     const target = order.find(i => groups[i].length + group.length <= capacity[i] && canPlace(groups[i], group));
@@ -193,7 +207,7 @@ function buildTeams(sizes, lockedGroups, strict = true) {
     const third = Math.ceil(remaining.length / 3);
     const levels = [remaining.slice(0, third), remaining.slice(third, third * 2), remaining.slice(third * 2)];
     while (levels.some(level => level.length)) {
-      for (const level of shuffleArray([0, 1, 2])) {
+      for (const level of A.shuffleArray([0, 1, 2])) {
         if (!levels[level].length) continue;
         const pick = Math.floor(Math.random() * levels[level].length);
         const studentId = levels[level][pick];
@@ -208,8 +222,8 @@ function buildTeams(sizes, lockedGroups, strict = true) {
     // deixessin per al final podrien quedar-se sense cap equip vàlid.
     const constrained = new Set(teams.constraints.separate.flatMap(set => set.students));
     remaining = [
-      ...shuffleArray(remaining.filter(id => constrained.has(id))),
-      ...shuffleArray(remaining.filter(id => !constrained.has(id)))
+      ...A.shuffleArray(remaining.filter(id => constrained.has(id))),
+      ...A.shuffleArray(remaining.filter(id => !constrained.has(id)))
     ];
     for (const studentId of remaining) {
       const target = pickRoomiestGroup(groups, capacity, fullyLocked, studentId, canPlace);
@@ -285,7 +299,7 @@ function refineTeamsBySwap(groups, lockedIds) {
 
 /** Alumnes bloquejats agrupats per equip. */
 function lockedTeamGroups() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const result = {};
   if (!teams.groups) return result;
   Object.keys(teams.lockedTeams).forEach(index => {
@@ -307,7 +321,7 @@ function createTeams() {
 }
 
 function doCreateTeams() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const plan = teamPlan();
   const locked = lockedTeamGroups();
   const lockedIds = new Set(Object.values(locked).flat());
@@ -332,7 +346,7 @@ function doCreateTeams() {
   if (!best) { toast('No s\'han pogut formar equips amb aquesta configuració', 'error'); return; }
   if (hetero) refineTeamsBySwap(best, lockedIds);
 
-  saveWithUndo();
+  A.saveWithUndo();
   // Els cadenats es reasignen als índexs nous.
   const newLockedTeams = {};
   const newLockedStudents = {};
@@ -350,18 +364,18 @@ function doCreateTeams() {
   teams.positions = {};
   teams.layout = null;
   teams.activeSaved = null;
-  arrangeTeamDesks();
-  saveState();
+  A.arrangeTeamDesks();
+  A.saveState();
 
-  if (currentCanvasView !== 'equips') switchCanvasView('equips');
-  clearTableSelection();
-  renderLayoutOptions();
-  renderStudentList();
-  updateCounts();
+  if (A.view.current !== 'equips') A.switchCanvasView('equips');
+  A.clearTableSelection();
+  A.renderLayoutOptions();
+  A.renderStudentList();
+  A.updateCounts();
   renderTeamsPanel();
-  renderTeamsCanvas();
-  updateActiveTeamBadge();
-  setTimeout(() => zoomReset(), 50);
+  A.renderTeamsCanvas();
+  A.updateActiveTeamBadge();
+  setTimeout(() => A.zoomReset(), 50);
 
   if (relaxed) toast('Equips formats, però alguna restricció de separar no s\'ha pogut complir', 'info');
   else toast(`Equips formats${lockedIds.size ? ` (${lockedIds.size} fixats)` : ''}`, 'success');
@@ -369,7 +383,7 @@ function doCreateTeams() {
 
 /** Incompliments per equip. */
 function teamViolations(groups) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   return groups.map(group => {
     const together = [];
     const separate = [];
@@ -388,7 +402,7 @@ function teamViolations(groups) {
 /* ── Panell d'equips ─────────────────────────────────── */
 
 function renderTeamsPanel() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const plan = teamPlan();
 
   el('teamSize').value = teams.studentsPerGroup;
@@ -406,8 +420,8 @@ function renderTeamsPanel() {
     remainderBox.innerHTML = `<div class="equips-remaining">
         <span class="mi mi-xs">info</span> Sobren <b>${plan.remainder}</b> ${plan.remainder === 1 ? 'alumne' : 'alumnes'}.
         <div class="equips-remaining-btns">
-          <button class="btn btn-sm ${teams.remainderMode === 'newGroup' ? 'selected-opt' : ''}" onclick="setRemainderMode('newGroup')">Equip nou</button>
-          <button class="btn btn-sm ${teams.remainderMode === 'distribute' ? 'selected-opt' : ''}" onclick="setRemainderMode('distribute')">Repartir</button>
+          <button class="btn btn-sm ${teams.remainderMode === 'newGroup' ? 'selected-opt' : ''}" data-action="setRemainderMode" data-value="newGroup">Equip nou</button>
+          <button class="btn btn-sm ${teams.remainderMode === 'distribute' ? 'selected-opt' : ''}" data-action="setRemainderMode" data-value="distribute">Repartir</button>
         </div>
       </div>`;
   } else {
@@ -426,7 +440,7 @@ function renderTeamsPanel() {
     warning.style.display = 'none';
   }
   el('teamCreateBtn').disabled = errors.length > 0;
-  updateFabTeamsButton();
+  A.updateFabTeamsButton();
 
   if (teams.groups?.length) renderTeamsSidebar(teams.groups);
   else { el('teamResults').innerHTML = ''; el('teamExportRow').style.display = 'none'; }
@@ -434,57 +448,58 @@ function renderTeamsPanel() {
 }
 
 function setTeamSize(value) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const total = teamStudents().length;
   teams.studentsPerGroup = Math.max(1, Math.min(parseInt(value, 10) || 1, Math.max(1, total)));
   if (total % teams.studentsPerGroup === 0) teams.remainderMode = null;
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 function setRemainderMode(mode) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   teams.remainderMode = teams.remainderMode === mode ? null : mode;
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 function toggleUseCompetency() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   teams.useCompetency = el('teamUseCompetency').checked;
   if (!teams.useCompetency) teams.heterogeneous = false;
-  saveState();
+  A.saveState();
   renderTeamsPanel();
-  if (teams.groups?.length) renderTeamsCanvas();
+  if (teams.groups?.length) A.renderTeamsCanvas();
 }
 
 function toggleHeterogeneous() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   teams.heterogeneous = el('teamHeterogeneous').checked;
-  saveState();
+  A.saveState();
 }
 
 function renderCompetencyTable() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (!teams.useCompetency) { el('teamCompetencyBody').innerHTML = ''; return; }
   el('teamCompetencyBody').innerHTML = teamStudents().map(s => `
     <tr><td>${esc(s.name)}</td>
       <td><input type="number" min="0" max="10" step="0.5" value="${competencyOf(s.id)}"
-                 onchange="setCompetency('${esc(s.id)}',this.value)"></td></tr>`).join('');
+                 data-change="setCompetency" data-sid="${esc(s.id)}"></td></tr>`).join('');
 }
 
 function setCompetency(studentId, value) {
   const parsed = parseFloat(value);
   if (isNaN(parsed)) return;
-  getTeams().competencies[studentId] = Math.max(0, Math.min(10, parsed));
-  saveState();
-  if (getTeams().groups?.length) { renderTeamsSidebar(getTeams().groups); renderTeamsCanvas(); }
+  const teams = A.getTeams();
+  teams.competencies[studentId] = Math.max(0, Math.min(10, parsed));
+  A.saveState();
+  if (teams.groups?.length) { renderTeamsSidebar(teams.groups); A.renderTeamsCanvas(); }
 }
 
 /* ── Conjunts de restriccions d'equips ───────────────── */
 
 function renderTeamConstraints() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const students = teamStudents();
   const contradictions = new Set(teamContradictions().flat());
 
@@ -496,18 +511,18 @@ function renderTeamConstraints() {
       const options = students.filter(s => !set.students.includes(s.id))
         .map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
       const tags = set.students.length
-        ? set.students.map(id => `<span class="cset-tag">${esc(studentName(id))}<button title="Treure" onclick="teamRemoveStudentFromSet('${esc(type)}','${esc(set.id)}','${esc(id)}')">&times;</button></span>`).join('')
+        ? set.students.map(id => `<span class="cset-tag">${esc(A.studentName(id))}<button title="Treure" data-action="teamRemoveStudentFromSet" data-type="${esc(type)}" data-set="${esc(set.id)}" data-sid="${esc(id)}">&times;</button></span>`).join('')
         : '<span class="cset-empty">Encara sense alumnes</span>';
       return `<div class="cset ${flagged ? 'incompatible' : ''}">
         <div class="cset-header">
           <span class="cset-name">${REL_LABEL[type]} ${index + 1}</span>
-          <button class="btn btn-sm btn-danger" style="padding:2px 5px" title="Eliminar conjunt" onclick="teamRemoveSet('${esc(type)}','${esc(set.id)}')"><span class="mi mi-xs">close</span></button>
+          <button class="btn btn-sm btn-danger" style="padding:2px 5px" title="Eliminar conjunt" data-action="teamRemoveSet" data-type="${esc(type)}" data-set="${esc(set.id)}"><span class="mi mi-xs">close</span></button>
         </div>
-        <select onchange="teamAddStudentToSet('${esc(type)}','${esc(set.id)}',this.value);this.value=''">
+        <select data-change="teamAddStudentToSet" data-type="${esc(type)}" data-set="${esc(set.id)}">
           <option value="">Afegir alumne...</option>${options}
         </select>
         <div class="cset-actions">
-          <button class="btn btn-sm" onclick="teamAddMultiple('${esc(type)}','${esc(set.id)}')"><span class="mi mi-xs">checklist</span> Diversos</button>
+          <button class="btn btn-sm" data-action="teamAddMultiple" data-type="${esc(type)}" data-set="${esc(set.id)}"><span class="mi mi-xs">checklist</span> Diversos</button>
         </div>
         <div class="cset-tags">${tags}</div>
       </div>`;
@@ -516,73 +531,55 @@ function renderTeamConstraints() {
 }
 
 function teamAddSet(type) {
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
+  A.saveWithUndo();
   teams.constraints[type].push({ id: uid(type), students: [] });
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 function teamRemoveSet(type, setId) {
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
+  A.saveWithUndo();
   teams.constraints[type] = teams.constraints[type].filter(set => set.id !== setId);
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 function teamAddStudentToSet(type, setId, studentId) {
   if (!studentId) return;
-  const set = getTeams().constraints[type].find(s => s.id === setId);
+  const set = A.getTeams().constraints[type].find(s => s.id === setId);
   if (!set || set.students.includes(studentId)) return;
-  saveWithUndo();
+  A.saveWithUndo();
   set.students.push(studentId);
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 function teamRemoveStudentFromSet(type, setId, studentId) {
-  const set = getTeams().constraints[type].find(s => s.id === setId);
+  const set = A.getTeams().constraints[type].find(s => s.id === setId);
   if (!set) return;
-  saveWithUndo();
+  A.saveWithUndo();
   set.students = set.students.filter(id => id !== studentId);
-  saveState();
+  A.saveState();
   renderTeamsPanel();
 }
 
 /** Tria diversos alumnes de cop per a un conjunt d'equips. */
 function teamAddMultiple(type, setId) {
-  const set = getTeams().constraints[type].find(s => s.id === setId);
+  const set = A.getTeams().constraints[type].find(s => s.id === setId);
   if (!set) return;
   const students = teamStudents();
   if (!students.length) { toast('Afegeix alumnes primer', 'error'); return; }
-  openStudentPicker({
+  A.openStudentPicker({
     title: `${REL_LABEL[type]} — triar alumnes`,
     students,
     preselected: set.students,
     confirmLabel: 'Aplicar',
     onConfirm: ids => {
-      saveWithUndo();
+      A.saveWithUndo();
       set.students = students.filter(s => ids.includes(s.id)).map(s => s.id);
-      saveState();
-      renderTeamsPanel();
-    }
-  });
-}
-
-/** Crea un conjunt nou d'equips triant diversos alumnes alhora. */
-function teamAddSetWithStudents(type) {
-  const students = teamStudents();
-  if (!students.length) { toast('Afegeix alumnes primer', 'error'); return; }
-  openStudentPicker({
-    title: `Nou conjunt per ${type === REL_TOGETHER ? 'ajuntar' : 'separar'}`,
-    students,
-    confirmLabel: 'Crear conjunt',
-    onConfirm: ids => {
-      if (ids.length < 2) { toast('Tria com a mínim dos alumnes', 'error'); return; }
-      saveWithUndo();
-      getTeams().constraints[type].push({ id: uid(type), students: students.filter(s => ids.includes(s.id)).map(s => s.id) });
-      saveState();
+      A.saveState();
       renderTeamsPanel();
     }
   });
@@ -590,10 +587,10 @@ function teamAddSetWithStudents(type) {
 
 /** Copia els conjunts del panell Relacions a les restriccions d'equips. */
 function copyRelationsToTeams() {
-  const data = getData();
+  const data = A.getData();
   if (!data.relations.length) { toast('No hi ha relacions definides', 'error'); return; }
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
+  A.saveWithUndo();
   let added = 0, skipped = 0;
   data.relations.forEach(rel => {
     if (rel.students.length < 2) return;
@@ -603,7 +600,7 @@ function copyRelationsToTeams() {
     teams.constraints[rel.type].push({ id: uid(rel.type), students: [...rel.students] });
     added++;
   });
-  saveState();
+  A.saveState();
   renderTeamsPanel();
   if (added) toast(`${pluralize(added, 'conjunt', 'conjunts')} ${added === 1 ? 'copiat' : 'copiats'}${skipped ? ` (${skipped} ja hi eren)` : ''}`, 'success');
   else toast('Tots els conjunts ja hi eren', 'info');
@@ -612,7 +609,7 @@ function copyRelationsToTeams() {
 /* ── Resultats al panell lateral ─────────────────────── */
 
 function renderTeamsSidebar(groups) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const showCompetency = teams.useCompetency;
   const violations = teamViolations(groups);
   const lockedTeamCount = Object.keys(teams.lockedTeams).length;
@@ -632,34 +629,34 @@ function renderTeamsSidebar(groups) {
     const isLocked = !!teams.lockedTeams[index];
     let violationHtml = '';
     if (violation.together.length) {
-      const inside = violation.together.filter(id => group.includes(id)).map(studentName);
-      const outside = violation.together.filter(id => !group.includes(id)).map(studentName);
+      const inside = violation.together.filter(id => group.includes(id)).map(A.studentName);
+      const outside = violation.together.filter(id => !group.includes(id)).map(A.studentName);
       violationHtml += `<div class="eq-violation"><span class="mi">warning</span> Haurien d'anar junts: ${esc(inside.join(', '))} amb ${esc(outside.join(', '))}</div>`;
     }
     if (violation.separate.length) {
-      violationHtml += `<div class="eq-violation"><span class="mi">warning</span> Haurien d'anar separats: ${esc(violation.separate.map(studentName).join(', '))}</div>`;
+      violationHtml += `<div class="eq-violation"><span class="mi">warning</span> Haurien d'anar separats: ${esc(violation.separate.map(A.studentName).join(', '))}</div>`;
     }
     const average = showCompetency ? `<div class="eq-group-avg">Nivell mitjà: ${groupMean(group).toFixed(2)}</div>` : '';
 
     return `<div class="eq-group-card ${hasWarning ? 'has-warnings' : ''}${isLocked ? ' team-locked' : ''}">
       <div class="eq-group-lock-row">
         <h4 style="margin-bottom:0">
-          <span class="eq-team-name" onclick="startRenameTeam(${index},this)" title="Clic per canviar el nom">${esc(teamName(index))}</span>
+          <span class="eq-team-name" data-action="renameTeam" data-idx="${index}" title="Clic per canviar el nom">${esc(teamName(index))}</span>
           <span class="eq-group-size">${pluralize(group.length, 'alumne')}</span>
         </h4>
-        <button class="eq-team-lock-btn${isLocked ? ' locked' : ''}" onclick="toggleTeamLock(${index})" title="${isLocked ? 'Desbloquejar equip' : 'Bloquejar equip sencer'}">
+        <button class="eq-team-lock-btn${isLocked ? ' locked' : ''}" data-action="toggleTeamLock" data-idx="${index}" title="${isLocked ? 'Desbloquejar equip' : 'Bloquejar equip sencer'}">
           <span class="mi mi-xs">${isLocked ? 'lock' : 'lock_open'}</span>${isLocked ? ' Bloquejat' : ' Bloquejar'}
         </button>
       </div>
       ${group.map(studentId => {
         const studentLocked = teams.lockedStudents[studentId] !== undefined;
         return `<div class="eq-group-member${studentLocked ? ' student-locked' : ''}">
-          <span class="eq-member-name">${esc(studentName(studentId))}</span>
+          <span class="eq-member-name">${esc(A.studentName(studentId))}</span>
           ${showCompetency ? `<span class="eq-member-comp">${competencyOf(studentId)}</span>` : ''}
-          <button class="eq-member-lock-btn${studentLocked ? ' locked' : ''}" onclick="event.stopPropagation();toggleStudentLock('${esc(studentId)}',${index})" title="${studentLocked ? 'Desbloquejar alumne' : 'Fixar alumne'}">
+          <button class="eq-member-lock-btn${studentLocked ? ' locked' : ''}" data-action="toggleStudentLock" data-sid="${esc(studentId)}" data-idx="${index}" title="${studentLocked ? 'Desbloquejar alumne' : 'Fixar alumne'}">
             <span class="mi" style="font-size:12px">${studentLocked ? 'lock' : 'lock_open'}</span>
           </button>
-          <select onchange="moveStudentToTeam('${esc(studentId)}',${index},parseInt(this.value,10))"${studentLocked ? ' disabled' : ''}>
+          <select data-change="moveStudentToTeam" data-sid="${esc(studentId)}"${studentLocked ? ' disabled' : ''}>
             ${groups.map((_, gi) => `<option value="${gi}" ${gi === index ? 'selected' : ''}>${esc(teamName(gi))}</option>`).join('')}
           </select>
         </div>`;
@@ -671,15 +668,16 @@ function renderTeamsSidebar(groups) {
   el('teamExportRow').style.display = 'flex';
 }
 
+/** Compatibilitat: mou un sol alumne a un altre equip. */
 function moveStudentToTeam(studentId, fromIndex, toIndex) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (fromIndex === toIndex || !teams.groups?.[fromIndex]?.includes(studentId) || !teams.groups[toIndex]) return false;
   return moveStudentsToTeam([studentId], toIndex);
 }
 
 /** Trasllat atòmic de la selecció: un únic desfer, sense saltar cadenats. */
 function moveStudentsToTeam(studentIds, toIndex) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (!teams.groups?.[toIndex]) return false;
   const ids = [...new Set(studentIds)];
   if (ids.some(id => !teams.groups.some(group => group.includes(id)))) return false;
@@ -695,39 +693,45 @@ function moveStudentsToTeam(studentIds, toIndex) {
     renderTeamsSidebar(teams.groups);
     return false;
   }
-  saveWithUndo();
+  A.saveWithUndo();
   const movingSet = new Set(moving);
   teams.groups = teams.groups.map(group => group.filter(id => !movingSet.has(id)));
   teams.groups[toIndex].push(...moving);
-  moving.forEach((id, index) => placeDeskWithTeam(id, toIndex, moving.slice(index)));
-  saveState();
-  renderLayoutOptions();
-  renderStudentList();
-  updateCounts();
+  moving.forEach((id, index) => A.placeDeskWithTeam(id, toIndex, moving.slice(index)));
+  A.saveState();
+  A.renderLayoutOptions();
+  A.renderStudentList();
+  A.updateCounts();
   renderTeamsSidebar(teams.groups);
-  renderTeamsCanvas();
+  A.renderTeamsCanvas();
   return true;
 }
 
 function startRenameTeam(index, sourceElement) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const current = teamName(index);
   const input = document.createElement('input');
   input.type = 'text';
   input.value = current;
   input.maxLength = 30;
   input.style.cssText = 'background:var(--surface2);border:1px solid var(--accent);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font);font-weight:700;font-size:inherit;padding:1px 5px;width:100%;outline:none;';
+  let finished = false;
   const finish = () => {
+    if (finished) return;
+    finished = true;
     const value = input.value.trim();
     const next = (value && value !== `Equip ${index + 1}`) ? value : '';
     const previous = teams.teamNames[index] || '';
     if (next !== previous) {
-      saveWithUndo();
+      A.saveWithUndo();
       if (next) teams.teamNames[index] = next; else delete teams.teamNames[index];
-      saveState();
+      A.saveState();
     }
-    renderTeamsSidebar(teams.groups || []);
-    renderTeamsCanvas();
+    // El repintat s'ajorna: el camp pot perdre el focus enmig d'un altre repintat.
+    setTimeout(() => {
+      renderTeamsSidebar(teams.groups || []);
+      A.renderTeamsCanvas();
+    }, 0);
   };
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
@@ -743,8 +747,8 @@ function startRenameTeam(index, sourceElement) {
 /* ── Cadenats ────────────────────────────────────────── */
 
 function toggleTeamLock(index) {
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
+  A.saveWithUndo();
   if (teams.lockedTeams[index]) {
     delete teams.lockedTeams[index];
     (teams.groups?.[index] || []).forEach(id => { delete teams.lockedStudents[id]; });
@@ -752,14 +756,14 @@ function toggleTeamLock(index) {
     teams.lockedTeams[index] = true;
     (teams.groups?.[index] || []).forEach(id => { teams.lockedStudents[id] = index; });
   }
-  saveState();
+  A.saveState();
   renderTeamsSidebar(teams.groups || []);
-  renderTeamsCanvas();
+  A.renderTeamsCanvas();
 }
 
 function toggleStudentLock(studentId, index) {
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
+  A.saveWithUndo();
   if (teams.lockedStudents[studentId] !== undefined) {
     delete teams.lockedStudents[studentId];
     delete teams.lockedTeams[index];
@@ -768,15 +772,15 @@ function toggleStudentLock(studentId, index) {
     const group = teams.groups?.[index] || [];
     if (group.length && group.every(id => teams.lockedStudents[id] !== undefined)) teams.lockedTeams[index] = true;
   }
-  saveState();
+  A.saveState();
   renderTeamsSidebar(teams.groups || []);
-  renderTeamsCanvas();
+  A.renderTeamsCanvas();
 }
 
 /* ── Equips desats ───────────────────────────────────── */
 
 function teamsHaveUnsavedChanges() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (teams.activeSaved === null || !teams.saved[teams.activeSaved]) return false;
   if (!teams.groups?.length) return false;
   const saved = teams.saved[teams.activeSaved];
@@ -791,28 +795,20 @@ function teamsHaveUnsavedChanges() {
     (!!saved.layout && JSON.stringify(saved.layout) !== JSON.stringify(teams.layout));
 }
 
+let _pendingGuard = null;
+
 function guardUnsavedTeams(onContinue) {
   if (!teamsHaveUnsavedChanges()) { onContinue(); return; }
-  const teams = getTeams();
+  const teams = A.getTeams();
   const name = teams.saved[teams.activeSaved].name;
+  _pendingGuard = { onContinue, name };
   openModal(`<h3><span class="mi" style="color:var(--orange)">warning</span> Canvis sense desar</h3>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:4px;line-height:1.5">Has modificat <strong>"${esc(name)}"</strong>. Si continues, els canvis es perdran.</p>
+    <p class="modal-note">Has modificat <strong>"${esc(name)}"</strong>. Si continues, els canvis es perdran.</p>
     <div class="modal-footer">
-      <button class="btn" onclick="closeModal()">Cancel·lar</button>
-      <button class="btn" id="guardContinueBtn"><span class="mi mi-xs">forward</span> Continuar sense desar</button>
-      <button class="btn btn-primary" id="guardSaveBtn"><span class="mi mi-xs">save</span> Desar i continuar</button>
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn" data-action="guardContinue"><span class="mi mi-xs">forward</span> Continuar sense desar</button>
+      <button class="btn btn-primary" data-action="guardSave"><span class="mi mi-xs">save</span> Desar i continuar</button>
     </div>`);
-  requestAnimationFrame(() => {
-    el('guardContinueBtn').onclick = () => { closeModal(); onContinue(); };
-    el('guardSaveBtn').onclick = () => {
-      closeModal();
-      writeSavedTeam(teams.saved[teams.activeSaved], name);
-      saveState();
-      renderSavedTeams();
-      toast(`"${name}" desat`, 'success');
-      onContinue();
-    };
-  });
 }
 
 function formattedNow() {
@@ -822,101 +818,107 @@ function formattedNow() {
 
 /** Bolca els equips actuals dins d'un registre desat. */
 function writeSavedTeam(target, name) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   target.name = name;
   target.date = formattedNow();
   target.groups = teams.groups.map(group => [...group]);
   target.teamNames = { ...teams.teamNames };
   target.competencies = teams.useCompetency ? { ...teams.competencies } : null;
-  target.layout = JSON.parse(JSON.stringify(getTeamLayout()));
+  target.layout = JSON.parse(JSON.stringify(A.getTeamLayout()));
 }
 
 function saveCurrentTeam() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (!teams.groups?.length) { toast('No hi ha equips per desar', 'error'); return; }
   const active = teams.activeSaved !== null ? teams.saved[teams.activeSaved] : null;
   const defaultName = active ? active.name : `Equips ${teams.saved.length + 1}`;
   const buttons = active
-    ? `<button class="btn" onclick="closeModal()">Cancel·lar</button>
-       <button class="btn" onclick="doSaveTeam('overwrite')"><span class="mi mi-xs">sync</span> Sobreescriure</button>
-       <button class="btn btn-primary" onclick="doSaveTeam('new')"><span class="mi mi-xs">add</span> Desar nou</button>`
-    : `<button class="btn" onclick="closeModal()">Cancel·lar</button>
-       <button class="btn btn-primary" onclick="doSaveTeam('new')"><span class="mi mi-xs">save</span> Desar</button>`;
+    ? `<button class="btn" data-action="closeModal">Cancel·lar</button>
+       <button class="btn" data-action="doSaveTeam" data-value="overwrite"><span class="mi mi-xs">sync</span> Sobreescriure</button>
+       <button class="btn btn-primary" data-action="doSaveTeam" data-value="new"><span class="mi mi-xs">add</span> Desar nou</button>`
+    : `<button class="btn" data-action="closeModal">Cancel·lar</button>
+       <button class="btn btn-primary" data-action="doSaveTeam" data-value="new"><span class="mi mi-xs">save</span> Desar</button>`;
   openModal(`<h3><span class="mi">save</span> Desar equips</h3>
     <div class="field"><label>Nom</label><input type="text" id="saveTeamName" value="${esc(defaultName)}"></div>
-    ${active ? `<p style="font-size:12px;color:var(--text2);line-height:1.5">Tens carregat <strong>"${esc(active.name)}"</strong>.</p>` : ''}
+    ${active ? `<p class="modal-note">Tens carregat <strong>"${esc(active.name)}"</strong>.</p>` : ''}
     <div class="modal-footer">${buttons}</div>`);
   focusModalField('saveTeamName');
 }
 
+let _pendingSaveName = '';
+
 function doSaveTeam(mode) {
   const name = (el('saveTeamName')?.value || '').trim();
   if (!name) { toast('Cal un nom', 'error'); return; }
-  const teams = getTeams();
-  saveWithUndo();
+  const teams = A.getTeams();
 
   if (mode === 'overwrite' && teams.activeSaved !== null && teams.saved[teams.activeSaved]) {
+    A.saveWithUndo();
     writeSavedTeam(teams.saved[teams.activeSaved], name);
   } else {
     const duplicate = teams.saved.findIndex((t, i) => t.name.toLowerCase() === name.toLowerCase() && i !== teams.activeSaved);
     if (duplicate !== -1) {
+      _pendingSaveName = name;
       closeModal();
       openModal(`<h3><span class="mi">warning</span> Nom repetit</h3>
-        <p style="font-size:12px;color:var(--text2);line-height:1.5">Ja hi ha uns equips anomenats <strong>"${esc(teams.saved[duplicate].name)}"</strong>.</p>
+        <p class="modal-note">Ja hi ha uns equips anomenats <strong>"${esc(teams.saved[duplicate].name)}"</strong>.</p>
         <div class="modal-footer">
-          <button class="btn" onclick="closeModal()">Cancel·lar</button>
-          <button class="btn" onclick="overwriteSavedTeam(${duplicate},'${esc(name).replace(/'/g, '&#39;')}')"><span class="mi mi-xs">sync</span> Sobreescriure</button>
-          <button class="btn btn-primary" onclick="appendSavedTeam('${esc(name).replace(/'/g, '&#39;')}')"><span class="mi mi-xs">add</span> Desar com a nou</button>
+          <button class="btn" data-action="closeModal">Cancel·lar</button>
+          <button class="btn" data-action="overwriteSavedTeam" data-idx="${duplicate}"><span class="mi mi-xs">sync</span> Sobreescriure</button>
+          <button class="btn btn-primary" data-action="appendSavedTeam"><span class="mi mi-xs">add</span> Desar com a nou</button>
         </div>`);
       return;
     }
-    const record = { id: uid('team'), name, date: '', groups: [], teamNames: {}, competencies: null };
-    writeSavedTeam(record, name);
-    teams.saved.push(record);
-    teams.activeSaved = teams.saved.length - 1;
+    A.saveWithUndo();
+    appendRecord(name);
   }
-  saveState();
+  A.saveState();
   closeModal();
   renderSavedTeams();
-  updateActiveTeamBadge();
+  A.updateActiveTeamBadge();
   toast(`"${name}" desat`, 'success');
 }
 
-function overwriteSavedTeam(index, name) {
-  const teams = getTeams();
-  saveWithUndo();
-  writeSavedTeam(teams.saved[index], name);
-  teams.activeSaved = index;
-  saveState();
-  closeModal();
-  renderSavedTeams();
-  updateActiveTeamBadge();
-  toast(`"${name}" sobreescrit`, 'success');
-}
-
-function appendSavedTeam(name) {
-  const teams = getTeams();
-  saveWithUndo();
+function appendRecord(name) {
+  const teams = A.getTeams();
   const record = { id: uid('team'), name, date: '', groups: [], teamNames: {}, competencies: null };
   writeSavedTeam(record, name);
   teams.saved.push(record);
   teams.activeSaved = teams.saved.length - 1;
-  saveState();
+}
+
+function overwriteSavedTeam(index) {
+  const teams = A.getTeams();
+  const name = _pendingSaveName;
+  A.saveWithUndo();
+  writeSavedTeam(teams.saved[index], name);
+  teams.activeSaved = index;
+  A.saveState();
   closeModal();
   renderSavedTeams();
-  updateActiveTeamBadge();
+  A.updateActiveTeamBadge();
+  toast(`"${name}" sobreescrit`, 'success');
+}
+
+function appendSavedTeam(name = _pendingSaveName) {
+  A.saveWithUndo();
+  appendRecord(name);
+  A.saveState();
+  closeModal();
+  renderSavedTeams();
+  A.updateActiveTeamBadge();
   toast(`"${name}" desat`, 'success');
 }
 
 function renderSavedTeams() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const strip = el('savedTeamsStrip');
   if (!teams.saved.length) { strip.style.display = 'none'; return; }
   strip.style.display = 'block';
   el('savedTeamsScroll').innerHTML = teams.saved.map((saved, index) => {
     const students = saved.groups.reduce((sum, group) => sum + group.length, 0);
-    return `<div class="eq-saved-card${index === teams.activeSaved ? ' active' : ''}" onclick="loadSavedTeam(${index})" title="${esc(saved.date)}">
-      <div class="eq-saved-card-actions"><button title="Eliminar" onclick="event.stopPropagation();deleteSavedTeam(${index})"><span class="mi mi-xs">close</span></button></div>
+    return `<div class="eq-saved-card${index === teams.activeSaved ? ' active' : ''}" data-action="loadSavedTeam" data-idx="${index}" title="${esc(saved.date)}">
+      <div class="eq-saved-card-actions"><button title="Eliminar" data-action="deleteSavedTeam" data-idx="${index}"><span class="mi mi-xs">close</span></button></div>
       <div class="eq-saved-card-name"><span class="mi mi-xs" style="flex-shrink:0;color:var(--accent)">groups</span><span>${esc(saved.name)}</span></div>
       <div class="eq-saved-card-meta">${pluralize(saved.groups.length, 'equip')} · ${pluralize(students, 'alumne')}<br>${esc(saved.date)}</div>
     </div>`;
@@ -924,10 +926,10 @@ function renderSavedTeams() {
 }
 
 function loadSavedTeam(index) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (index === teams.activeSaved) return;
   guardUnsavedTeams(() => {
-    saveWithUndo();
+    A.saveWithUndo();
     const saved = teams.saved[index];
     const validIds = new Set(teamStudents().map(s => s.id));
     teams.groups = saved.groups.map(group => group.filter(id => validIds.has(id)));
@@ -939,33 +941,33 @@ function loadSavedTeam(index) {
     teams.activeSaved = index;
     teams.layout = saved.layout ? JSON.parse(JSON.stringify(saved.layout)) : null;
     if (!teams.layout) {
-      arrangeTeamDesks();
+      A.arrangeTeamDesks();
       saved.layout = JSON.parse(JSON.stringify(teams.layout));
     }
-    saveState();
-    clearTableSelection();
-    renderLayoutOptions();
-    renderStudentList();
-    updateCounts();
+    A.saveState();
+    A.clearTableSelection();
+    A.renderLayoutOptions();
+    A.renderStudentList();
+    A.updateCounts();
     renderTeamsPanel();
-    renderTeamsCanvas();
-    updateActiveTeamBadge();
-    if (currentCanvasView === 'equips') setTimeout(() => zoomReset(), 50);
+    A.renderTeamsCanvas();
+    A.updateActiveTeamBadge();
+    if (A.view.current === 'equips') setTimeout(() => A.zoomReset(), 50);
     toast(`"${saved.name}" carregat`, 'info');
   });
 }
 
 function deleteSavedTeam(index) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const name = teams.saved[index].name;
   appConfirm(`Eliminar "${name}"?`, 'Aquests equips desats es perdran.', () => {
-    saveWithUndo();
+    A.saveWithUndo();
     teams.saved.splice(index, 1);
     if (teams.activeSaved === index) teams.activeSaved = null;
     else if (teams.activeSaved !== null && teams.activeSaved > index) teams.activeSaved--;
-    saveState();
+    A.saveState();
     renderSavedTeams();
-    updateActiveTeamBadge();
+    A.updateActiveTeamBadge();
     toast(`"${name}" eliminat`, 'info');
   });
 }
@@ -973,15 +975,15 @@ function deleteSavedTeam(index) {
 /* ── Exportació ──────────────────────────────────────── */
 
 function exportTeams() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (!teams.groups?.length) return;
   if (teams.useCompetency) {
     openModal(`<h3><span class="mi">download</span> Exportar equips</h3>
-      <p style="font-size:12px;color:var(--text2)">Vols incloure els nivells de competència?</p>
+      <p class="modal-note">Vols incloure els nivells de competència?</p>
       <div class="modal-footer">
-        <button class="btn" onclick="closeModal()">Cancel·lar</button>
-        <button class="btn" onclick="doExportTeams(false);closeModal()">Només noms</button>
-        <button class="btn btn-primary" onclick="doExportTeams(true);closeModal()">Amb nivells</button>
+        <button class="btn" data-action="closeModal">Cancel·lar</button>
+        <button class="btn" data-action="doExportTeams" data-value="">Només noms</button>
+        <button class="btn btn-primary" data-action="doExportTeams" data-value="1">Amb nivells</button>
       </div>`);
   } else {
     doExportTeams(false);
@@ -989,17 +991,73 @@ function exportTeams() {
 }
 
 function doExportTeams(includeCompetency) {
-  const teams = getTeams();
+  const teams = A.getTeams();
   const date = new Date().toLocaleDateString('ca-ES');
   let text = `Equips de treball — ${date}\n${'═'.repeat(40)}\n\n`;
   teams.groups.forEach((group, index) => {
     text += `${teamName(index).toUpperCase()}\n${'─'.repeat(20)}\n`;
     if (includeCompetency) text += `Nivell mitjà: ${groupMean(group).toFixed(2)}\n`;
     group.forEach(id => {
-      text += includeCompetency ? `  ${studentName(id)} (${competencyOf(id)})\n` : `  ${studentName(id)}\n`;
+      text += includeCompetency ? `  ${A.studentName(id)} (${competencyOf(id)})\n` : `  ${A.studentName(id)}\n`;
     });
     text += '\n';
   });
-  downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `equips_${date.replace(/\//g, '-')}.txt`);
+  A.downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `equips_${date.replace(/\//g, '-')}.txt`);
   toast('Equips exportats', 'success');
 }
+
+A.registerActions({
+  setTeamSize: node => setTeamSize(node.value),
+  setRemainderMode: node => setRemainderMode(node.dataset.value),
+  toggleUseCompetency: () => toggleUseCompetency(),
+  toggleHeterogeneous: () => toggleHeterogeneous(),
+  setCompetency: node => setCompetency(node.dataset.sid, node.value),
+  teamAddSet: node => teamAddSet(node.dataset.type),
+  teamRemoveSet: node => teamRemoveSet(node.dataset.type, node.dataset.set),
+  teamAddStudentToSet: node => { teamAddStudentToSet(node.dataset.type, node.dataset.set, node.value); node.value = ''; },
+  teamRemoveStudentFromSet: node => teamRemoveStudentFromSet(node.dataset.type, node.dataset.set, node.dataset.sid),
+  teamAddMultiple: node => teamAddMultiple(node.dataset.type, node.dataset.set),
+  copyRelationsToTeams: () => copyRelationsToTeams(),
+  createTeams: () => createTeams(),
+  renameTeam: node => startRenameTeam(+node.dataset.idx, node),
+  toggleTeamLock: node => toggleTeamLock(+node.dataset.idx),
+  toggleStudentLock: node => toggleStudentLock(node.dataset.sid, +node.dataset.idx),
+  moveStudentToTeam: node => moveStudentsToTeam([node.dataset.sid], parseInt(node.value, 10)),
+  guardContinue: () => {
+    const pending = _pendingGuard;
+    _pendingGuard = null;
+    closeModal();
+    pending?.onContinue();
+  },
+  guardSave: () => {
+    const pending = _pendingGuard;
+    _pendingGuard = null;
+    closeModal();
+    if (!pending) return;
+    const teams = A.getTeams();
+    writeSavedTeam(teams.saved[teams.activeSaved], pending.name);
+    A.saveState();
+    renderSavedTeams();
+    toast(`"${pending.name}" desat`, 'success');
+    pending.onContinue();
+  },
+  saveCurrentTeam: () => saveCurrentTeam(),
+  doSaveTeam: node => doSaveTeam(node.dataset.value),
+  overwriteSavedTeam: node => overwriteSavedTeam(+node.dataset.idx),
+  appendSavedTeam: () => appendSavedTeam(),
+  loadSavedTeam: node => loadSavedTeam(+node.dataset.idx),
+  deleteSavedTeam: node => deleteSavedTeam(+node.dataset.idx),
+  exportTeams: () => exportTeams(),
+  doExportTeams: node => { doExportTeams(!!node.dataset.value); closeModal(); }
+});
+
+Object.assign(A, {
+  teamStudents, teamName, competencyOf, groupMean, teamIndexOf, removeStudentFromTeams,
+  teamPlan, unifiedTogetherSets, teamContradictions, teamValidationErrors, buildTeams,
+  createTeams, teamViolations, renderTeamsPanel, renderTeamsSidebar, renderSavedTeams,
+  moveStudentsToTeam, moveStudentToTeam, startRenameTeam, toggleTeamLock, toggleStudentLock,
+  teamsHaveUnsavedChanges, loadSavedTeam, appendSavedTeam, saveCurrentTeam, deleteSavedTeam,
+  exportTeams, doExportTeams
+});
+
+})(window.AulaMap);

@@ -1,16 +1,25 @@
-/** Selecció i moviment conjunt de pupitres i taules d'equip. */
+/**
+ * AulaMap — Selecció múltiple al llenç
+ *
+ * Selecciona i mou pupitres, tant a l'aula com a l'esquema d'equips, i manté
+ * les accions que depenen de la selecció (paperera conjunta i trasllat
+ * d'alumnes a un altre equip).
+ */
+(function (A) {
 'use strict';
+
+const { el, esc, flags } = A;
 
 const tableSelection = new Set();
 let tableGesture = null;
-let spaceHeld = false;
-let suppressCanvasClick = false;
+
+function isTableGesture() { return tableGesture !== null; }
 
 function canvasTables() {
   const container = el('desksContainer');
   return [...container.querySelectorAll('.desk')].map(node => {
     const id = node.dataset.did;
-    const position = getCanvasData().desks.find(d => d.id === id);
+    const position = A.getCanvasData().desks.find(d => d.id === id);
     return { id, node, position };
   }).filter(item => item.position);
 }
@@ -29,8 +38,9 @@ function clearTableSelection() {
   updateSelectionActions();
 }
 
+/** Alumnes que ocupen els pupitres seleccionats a l'esquema d'equips. */
 function selectedTeamStudents() {
-  const layout = getTeamLayout();
+  const layout = A.getTeamLayout();
   return [...new Set([...tableSelection].map(id => layout.assignments[id]).filter(Boolean))];
 }
 
@@ -38,13 +48,13 @@ function updateSelectionActions() {
   const remove = el('deleteSelectedBtn');
   if (remove) {
     remove.hidden = !tableSelection.size;
-    remove.textContent = `Eliminar seleccionats (${tableSelection.size})`;
+    remove.innerHTML = `<span class="mi mi-xs">delete</span> Eliminar seleccionats (${tableSelection.size})`;
   }
   const move = el('moveSelectedTeam');
   if (move) {
-    move.hidden = currentCanvasView !== 'equips' || !tableSelection.size;
-    move.innerHTML = '<option value="">Moure alumnes a…</option>' + (getTeams().groups || []).map((_, index) =>
-      `<option value="${index}"${getTeams().lockedTeams[index] ? ' disabled' : ''}>${esc(teamName(index))}</option>`).join('');
+    move.hidden = A.view.current !== 'equips' || !tableSelection.size;
+    move.innerHTML = '<option value="">Moure alumnes a…</option>' + (A.getTeams().groups || []).map((_, index) =>
+      `<option value="${index}"${A.getTeams().lockedTeams[index] ? ' disabled' : ''}>${esc(A.teamName(index))}</option>`).join('');
   }
 }
 
@@ -71,9 +81,9 @@ function moveTableGesture(event) {
   const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
   if (!gesture.moved && Math.hypot(dx, dy) < 4) return;
   if (gesture.type === 'move') {
-    const x = Math.max(-Math.min(...gesture.items.map(item => item.x)), Math.round(dx / zoomLevel / 10) * 10);
-    const y = Math.max(-Math.min(...gesture.items.map(item => item.y)), Math.round(dy / zoomLevel / 10) * 10);
-    if (!gesture.moved) pushUndo();
+    const x = Math.max(-Math.min(...gesture.items.map(item => item.x)), Math.round(dx / A.view.zoom / 10) * 10);
+    const y = Math.max(-Math.min(...gesture.items.map(item => item.y)), Math.round(dy / A.view.zoom / 10) * 10);
+    if (!gesture.moved) A.pushUndo();
     gesture.items.forEach(item => {
       item.position.x = item.x + x;
       item.position.y = item.y + y;
@@ -81,8 +91,8 @@ function moveTableGesture(event) {
       item.node.style.top = item.position.y + 'px';
       item.node.classList.add('moving');
     });
-    drawRelationLines(getData());
-    if (currentCanvasView === 'equips') renderTeamOverlays();
+    A.drawRelationLines(A.getData());
+    if (A.view.current === 'equips') A.renderTeamOverlays();
   } else {
     const left = Math.min(gesture.x, event.clientX), top = Math.min(gesture.y, event.clientY);
     const right = Math.max(gesture.x, event.clientX), bottom = Math.max(gesture.y, event.clientY);
@@ -109,13 +119,13 @@ function endTableGesture(event) {
   gesture.box?.remove();
   gesture.items?.forEach(item => item.node.classList.remove('moving'));
   if (gesture.moved) {
-    suppressCanvasClick = true;
-    setTimeout(() => { suppressCanvasClick = false; }, 0);
+    flags.suppressClick = true;
+    setTimeout(() => { flags.suppressClick = false; }, 0);
     if (gesture.type === 'move') {
-      getCanvasData().layoutType = 'free';
-      renderLayoutOptions();
-      renderDesks();
-      saveState();
+      A.getCanvasData().layoutType = 'free';
+      A.renderLayoutOptions();
+      A.renderDesks();
+      A.saveState();
     }
   }
 }
@@ -123,7 +133,7 @@ function endTableGesture(event) {
 function initTableSelection() {
   const area = el('canvasArea');
   area.addEventListener('pointerdown', event => {
-    if (spaceHeld || event.button !== 0 || tableGesture) return;
+    if (flags.spaceHeld || event.button !== 0 || tableGesture) return;
     const table = event.target.closest('.desk');
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     if (table) {
@@ -134,7 +144,7 @@ function initTableSelection() {
         if (tableSelection.has(id)) tableSelection.delete(id); else tableSelection.add(id);
         refreshTableSelection();
       } else if (!event.target.closest('button,input') && tableSelection.has(id) &&
-          !(currentCanvasView === 'equips' && event.target.closest('.desk-student'))) {
+          !(A.view.current === 'equips' && event.target.closest('.desk-student'))) {
         startTableMove(event, id);
       }
       return;
@@ -150,7 +160,7 @@ function initTableSelection() {
     area.setPointerCapture(event.pointerId);
   }, true);
   area.addEventListener('click', event => {
-    if (suppressCanvasClick || spaceHeld || event.shiftKey || event.ctrlKey || event.metaKey ||
+    if (flags.suppressClick || flags.spaceHeld || event.shiftKey || event.ctrlKey || event.metaKey ||
         (tableSelection.size && event.target.closest('.desk') && !event.target.closest('button'))) {
       event.preventDefault();
       event.stopPropagation();
@@ -162,3 +172,13 @@ function initTableSelection() {
   area.addEventListener('lostpointercapture', endTableGesture);
   window.addEventListener('blur', () => endTableGesture());
 }
+
+A.registerActions({ clearSelection: () => clearTableSelection() });
+
+Object.assign(A, {
+  tableSelection, isTableGesture, canvasTables, selectedTeamStudents, updateSelectionActions,
+  refreshTableSelection, clearTableSelection, startTableMove, moveTableGesture, endTableGesture,
+  initTableSelection
+});
+
+})(window.AulaMap);

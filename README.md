@@ -22,6 +22,8 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 
 ### Alumnes
 - Alta individual, alta massiva (una línia per nom) i importació des d'un altre perfil.
+- **Importació i exportació en CSV** (`nom;nivell`), compatible amb qualsevol full de
+  càlcul: també s'exporten la distribució de l'aula i els equips.
 - Cerca ràpida i arrossegament directe cap als pupitres.
 
 ### Relacions: **ajuntar** i **separar**
@@ -31,15 +33,20 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 - Cada conjunt es pot omplir **alumne per alumne o triant-ne diversos de cop**.
 - L'estat de cada conjunt es mostra en temps real (complert / incomplert / pendent),
   amb línies i indicadors sobre el mapa de l'aula i un percentatge global.
+- Quan un conjunt no es compleix, s'explica **per què** (no hi ha cap bloc de pupitres
+  veïns lliure, hi ha algú fixat amb cadenat, les separacions són contradictòries, no hi
+  caben tants alumnes separats...) i un botó porta directament als pupitres implicats.
 
 ### Distribució de l'aula
 - Plantilles: files, parelles, forma d'U, illes de 4, illes de 6, cercle i distribució lliure.
 - Files, columnes i espaiat configurables; pupitres moguts a mà, afegits o eliminats.
 - Taula del professorat a dalt o a baix, zoom, enquadrament i desplaçament del llenç.
 - Selecció múltiple a Aula i Equips: arrossega el fons per seleccionar amb un rectangle, o fes Majúscules/Ctrl (Cmd a Mac) + clic per afegir o treure taules. Arrossega una taula seleccionada o el seu control de moviment per moure el conjunt. Esc o un clic al fons desmarca la selecció.
-- **Eliminar seleccionats** o **Supr/Retrocés** elimina tots els pupitres seleccionats en una sola acció de desfer, conservant els alumnes. A Equips només elimina la representació; **Organitzar taules** torna a mostrar els membres que falten.
+- **Eliminar seleccionats** o **Supr/Retrocés** elimina tots els pupitres seleccionats en una sola acció de desfer, després de confirmar-ho i dient quants alumnes es queden sense lloc. Els alumnes es conserven. A Equips només elimina la representació; **Organitzar taules** torna a mostrar els membres que falten.
 - Desplaçament del llenç amb espai sostingut + arrossegament del ratolí; en pantalles tàctils, arrossega el fons amb un dit. Els moviments de taules es poden desfer i refer.
 - Un clic al llenç hi trasllada el focus: l'espai no torna a activar l'últim botó premut.
+- Un pupitre ocupat es pot **reassignar**: substituir l'alumne per un que no tingui lloc,
+  intercanviar-lo amb el d'un altre pupitre o arrossegar-ne el nom fins al pupitre de destí.
 - Alumnes **fixats** amb cadenat: no es mouen en tornar a assignar.
 
 ### Assignació automàtica
@@ -56,7 +63,11 @@ informa del percentatge de relacions acomplides.
 - El menú **Equips** activa un esquema amb contorns taronja subtils, independent dels pupitres i seients d'Aula. Es comparteix el llenç visual, però formar, carregar o moure equips no modifica la distribució del grup classe.
 - Cada formació desada per a un treball o matèria conserva els membres i la seva distribució pròpia. **Organitzar taules** ordena només la formació activa.
 - Mou els pupitres seleccionats amb el seu control de moviment, o un equip sencer amb el de la capçalera. Per canviar diversos alumnes de grup, selecciona'ls amb rectangle o Majúscules/Ctrl + clic i arrossega un dels noms sobre un pupitre o la capçalera del destí. També pots usar **Moure alumnes a…**. Els cadenats es respecten i tot el trasllat es desfà en una sola acció.
-- Equips desats amb nom i data, exportació a text i exportació de l'aula a PDF.
+- Equips desats amb nom i data, exportació a text o CSV i exportació de l'aula a PDF.
+
+### Interfície
+- **Mode clar i mode fosc** (menú de la capçalera), pensat per projectar sobre paret blanca.
+- Barra lateral redimensionable, navegació inferior en pantalles petites i modals adaptats.
 
 ---
 
@@ -70,6 +81,15 @@ cd aulamap
 # obre index.html amb el navegador, o serveix la carpeta:
 python -m http.server 8000   # → http://localhost:8000
 ```
+
+Les proves de lògica (veïnatge i relacions, selecció i moviment al llenç, esquemes
+d'equips, accions declarades, CSV i pupitres) es passen amb Node, sense cap dependència:
+
+```bash
+node --test tests/
+```
+
+`tests/browser-canvas.cjs` és una prova de navegador completa (necessita Puppeteer).
 
 > L'exportació a PDF i les tipografies es carreguen des d'un CDN, de manera que
 > necessiten connexió. La resta de funcionalitats funcionen sense connexió.
@@ -94,7 +114,7 @@ assets/css/
   teams.css                 Panell i taules d'equips
   responsive.css            Navegació mòbil i adaptació a pantalles petites
 assets/js/
-  core.js                   Constants, utilitats, modals i selector d'alumnes
+  core.js                   Constants, utilitats, modals, selector d'alumnes i registre d'accions
   state.js                  Model de dades, persistència, migracions i desfer/refer
   profiles.js               Grups (perfils) i configuracions
   students.js               Gestió de l'alumnat
@@ -102,11 +122,24 @@ assets/js/
   seating.js                Plantilles, pupitres i assignació manual
   autoassign.js             Assignació automàtica optimitzada
   teams.js                  Formació d'equips, restriccions i equips desats
-  teamscanvas.js            Taules d'equip al llenç
-  exports.js                Fitxers .json i exportació a PDF
-  ui.js                     Pestanyes, zoom, desplaçament i repintat global
+  teamscanvas.js            Esquema d'equips sobre el llenç
+  exports.js                Fitxers .json, CSV i exportació a PDF
+  ui.js                     Pestanyes, tema, zoom, desplaçament i repintat global
+  canvasselection.js        Selecció múltiple i moviment de pupitres
   app.js                    Arrencada
+tests/                      Proves de lògica (node --test tests/)
 ```
+
+### Organització del codi
+
+Tot el codi viu dins de l'espai de noms `window.AulaMap`: cada fitxer és una funció
+anònima que hi registra el que ha de ser visible des de fora, de manera que no hi ha
+funcions globals que puguin xocar entre elles.
+
+La interfície no crida funcions des d'atributs `onclick`: els elements es marquen amb
+`data-action` (clic), `data-change`, `data-input`, `data-dblclick`, `data-keydown` o
+`data-press`, i un únic gestor per tipus d'esdeveniment resol l'acció registrada. Els
+paràmetres viatgen en altres atributs `data-*` (`data-did`, `data-sid`, `data-idx`...).
 
 ### Model de dades
 
@@ -120,7 +153,8 @@ state
     ├── relations[]     { id, type: 'together' | 'separate', students: [id] }
     ├── desks[], assignments{}, lockedDesks{}
     ├── layoutType, layoutRows, layoutCols, layoutSpacing, teacherAtBottom
-    └── teams           mides, competències, restriccions, equips i equips desats
+    └── teams           mides, competències, restriccions, equips, esquema propi
+                        (`layout`) i equips desats
 ```
 
 Les dades de versions anteriors (`aulamap_v4`, `aulamap_equips_v1`) es migren

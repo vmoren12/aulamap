@@ -6,9 +6,13 @@
  * parella dels seus membres pot seure en pupitres veïns.
  *
  * Aquí hi ha: el càlcul de veïnatge entre pupitres, l'avaluació de les relacions
- * respecte de la distribució actual i la interfície del panell.
+ * respecte de la distribució actual, l'explicació dels incompliments i la
+ * interfície del panell.
  */
+(function (A) {
 'use strict';
+
+const { el, esc, uid, toast, pluralize, DESK_W, DESK_H, REL_TOGETHER, REL_SEPARATE, REL_LABEL } = A;
 
 /** Marge màxim (respecte del veí més pròxim) per considerar dos pupitres veïns. */
 const NEIGHBOR_SLACK = 1.8;
@@ -191,6 +195,114 @@ function connectedComponents(studentIds, deskOf, graph) {
   return components;
 }
 
+/* ── Explicació dels incompliments (millora 1.3) ─────── */
+
+/** Mida del bloc de pupitres veïns més gran que el conjunt podria arribar a ocupar. */
+function largestUsableBlock(data, graph, members) {
+  const memberSet = new Set(members);
+  const usable = data.desks.filter(desk => {
+    const occupant = data.assignments[desk.id];
+    if (!occupant) return true;                       // pupitre lliure
+    if (memberSet.has(occupant)) return true;         // ja hi seu un membre
+    return !data.lockedDesks[desk.id];                // ocupat, però es pot moure
+  });
+  const ids = new Set(usable.map(d => d.id));
+  const pending = new Set(ids);
+  let best = 0;
+  while (pending.size) {
+    const start = pending.values().next().value;
+    pending.delete(start);
+    let size = 1;
+    const queue = [start];
+    while (queue.length) {
+      const current = queue.pop();
+      for (const other of graph.get(current) || []) {
+        if (!pending.has(other)) continue;
+        pending.delete(other);
+        size++;
+        queue.push(other);
+      }
+    }
+    if (size > best) best = size;
+  }
+  return best;
+}
+
+/** Estimació golafre de quants pupitres es poden triar sense que cap sigui veí. */
+function spreadCapacity(data, graph) {
+  const ordered = data.desks.slice().sort((a, b) =>
+    (graph.get(a.id)?.size || 0) - (graph.get(b.id)?.size || 0));
+  const chosen = [];
+  ordered.forEach(desk => {
+    if (chosen.every(id => !areNeighbors(desk.id, id, graph))) chosen.push(desk.id);
+  });
+  return chosen.length;
+}
+
+/**
+ * Per què una relació no es compleix, amb els pupitres implicats per poder-hi anar.
+ * @returns {{text:string, deskIds:string[], studentIds:string[]}|null}
+ */
+function explainRelation(data, result, contradictions) {
+  const rel = data.relations.find(r => r.id === result.id);
+  if (!rel || result.status === 'sat') return null;
+
+  const graph = buildNeighborGraph(data.desks);
+  const deskOf = buildStudentDeskMap(data);
+  const nameOf = id => data.students.find(s => s.id === id)?.name || '?';
+  const seated = rel.students.filter(id => deskOf[id]);
+  const deskIds = seated.map(id => deskOf[id]);
+  const base = { deskIds, studentIds: rel.students };
+
+  if (rel.students.length < 2) {
+    return { ...base, text: 'Un conjunt amb menys de dos alumnes no afecta la distribució.' };
+  }
+  if (result.status === 'pend') {
+    const missing = rel.students.filter(id => !deskOf[id]);
+    return { ...base, text: `Encara no es pot comprovar: ${missing.map(nameOf).join(', ')} ${missing.length === 1 ? 'no té' : 'no tenen'} lloc assignat.` };
+  }
+
+  const blocked = (contradictions || findRelationContradictions(data))
+    .find(c => c.togetherId === rel.id || c.separateIds.includes(rel.id));
+  if (blocked) {
+    return { ...base, text: 'Les relacions de separar definides fan impossible ajuntar tot el conjunt: cal revisar-les abans de moure cap pupitre.' };
+  }
+
+  const reasons = [];
+  if (rel.type === REL_TOGETHER) {
+    const lockedMembers = seated.filter(id => data.lockedDesks[deskOf[id]]);
+    if (lockedMembers.length >= 2) {
+      const lockedComponents = connectedComponents(lockedMembers, deskOf, graph);
+      if (lockedComponents.length > 1) {
+        reasons.push(`${lockedMembers.map(nameOf).join(', ')} ${lockedMembers.length === 1 ? 'està fixat' : 'estan fixats'} amb cadenat en pupitres que no són veïns`);
+      }
+    }
+    const block = largestUsableBlock(data, graph, rel.students);
+    if (block < rel.students.length) {
+      reasons.push(`no hi ha cap bloc de ${rel.students.length} pupitres veïns disponible (el més gran en té ${block})`);
+    }
+    if (!reasons.length) {
+      reasons.push(`ara seuen en ${pluralize((result.components || []).length, 'bloc', 'blocs')} separats; torna a executar l'assignació automàtica o mou-los a mà`);
+    }
+  } else {
+    const pairs = result.conflicts || [];
+    if (pairs.length) {
+      reasons.push('seuen en pupitres veïns: ' + pairs.map(p => `${nameOf(p[0])} i ${nameOf(p[1])}`).join('; '));
+    }
+    const stuck = pairs.filter(p => data.lockedDesks[deskOf[p[0]]] && data.lockedDesks[deskOf[p[1]]]);
+    if (stuck.length) {
+      reasons.push('tots dos estan fixats amb cadenat, cap dels dos es pot moure');
+    }
+    const capacity = spreadCapacity(data, graph);
+    if (capacity < rel.students.length) {
+      reasons.push(`amb aquesta distribució només s'hi poden encabir uns ${capacity} alumnes sense que cap sigui veí d'un altre`);
+    }
+  }
+
+  const text = reasons.join('; ');
+  return { ...base, text: text.charAt(0).toUpperCase() + text.slice(1) + '.' };
+}
+
 /**
  * Línies entre alumnes relacionats que seuen a tocar.
  * És l'única part que cal recalcular mentre s'arrossega un pupitre.
@@ -232,11 +344,11 @@ function relationDots(data, evaluation) {
 /* ── Panell de relacions ─────────────────────────────── */
 
 function relationSets(type) {
-  return getData().relations.filter(r => r.type === type);
+  return A.getData().relations.filter(r => r.type === type);
 }
 
 function renderRelationsPanel() {
-  const data = getData();
+  const data = A.getData();
   const evaluation = evaluateRelations(data);
   const statusById = new Map(evaluation.results.map(r => [r.id, r]));
   const nameOf = id => data.students.find(s => s.id === id)?.name || '?';
@@ -261,21 +373,29 @@ function renderRelationsPanel() {
         .filter(s => !rel.students.includes(s.id))
         .map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
       const tags = rel.students.length
-        ? rel.students.map(id => `<span class="cset-tag">${esc(nameOf(id))}<button title="Treure" onclick="relRemoveStudent('${esc(rel.id)}','${esc(id)}')">&times;</button></span>`).join('')
+        ? rel.students.map(id => `<span class="cset-tag">${esc(nameOf(id))}<button title="Treure" data-action="relRemoveStudent" data-rel="${esc(rel.id)}" data-sid="${esc(id)}">&times;</button></span>`).join('')
         : '<span class="cset-empty">Encara sense alumnes</span>';
+      const why = explainRelation(data, result, contradictions);
+      const whyHtml = why ? `<div class="cset-why">
+          <span class="mi">${result.status === 'viol' ? 'error' : 'schedule'}</span>
+          <span class="cset-why-text">${esc(why.text)}
+            ${why.deskIds.length ? `<br><button class="cset-focus" data-action="relFocus" data-rel="${esc(rel.id)}"><span class="mi">my_location</span> Veure al llenç</button>` : ''}
+          </span>
+        </div>` : '';
       return `<div class="cset ${result.status}${incompatibleIds.has(rel.id) ? ' incompatible' : ''}">
         <div class="cset-header">
           <span class="cset-name">${REL_LABEL[type]} ${index + 1}</span>
           <span class="mi mi-sm cset-status ${result.status}" title="${esc(result.message)}">${icon}</span>
-          <button class="btn btn-sm btn-danger" style="padding:2px 5px" title="Eliminar conjunt" onclick="relRemoveSet('${esc(rel.id)}')"><span class="mi mi-xs">close</span></button>
+          <button class="btn btn-sm btn-danger" style="padding:2px 5px" title="Eliminar conjunt" data-action="relRemoveSet" data-rel="${esc(rel.id)}"><span class="mi mi-xs">close</span></button>
         </div>
-        <select onchange="relAddStudent('${esc(rel.id)}',this.value);this.value=''">
+        <select data-change="relAddStudent" data-rel="${esc(rel.id)}">
           <option value="">Afegir alumne...</option>${options}
         </select>
         <div class="cset-actions">
-          <button class="btn btn-sm" onclick="relAddMultiple('${esc(rel.id)}')"><span class="mi mi-xs">checklist</span> Diversos</button>
+          <button class="btn btn-sm" data-action="relAddMultiple" data-rel="${esc(rel.id)}"><span class="mi mi-xs">checklist</span> Diversos</button>
         </div>
         <div class="cset-tags">${tags}</div>
+        ${whyHtml}
       </div>`;
     }).join('') : '<div class="cset-empty">Cap conjunt</div>';
   });
@@ -285,7 +405,7 @@ function renderRelationsPanel() {
 
 /** Insígnia de la barra d'eines i barra de progrés del panell. */
 function renderRelationScore(evaluation) {
-  const data = getData();
+  const data = A.getData();
   const summary = el('relScoreSummary');
   const toolbar = el('toolbarScore');
   if (!data.relations.length) { toolbar.innerHTML = ''; summary.innerHTML = ''; return; }
@@ -308,83 +428,74 @@ function renderRelationScore(evaluation) {
 }
 
 function relAddSet(type) {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   data.relations.push({ id: uid('rel'), type, students: [] });
-  saveState();
+  A.saveState();
   renderRelationsPanel();
 }
 
 function relRemoveSet(id) {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   data.relations = data.relations.filter(r => r.id !== id);
-  saveState();
+  A.saveState();
   renderRelationsPanel();
-  renderDesks();
+  A.renderDesks();
 }
 
 function relAddStudent(setId, studentId) {
   if (!studentId) return;
-  const rel = getData().relations.find(r => r.id === setId);
+  const rel = A.getData().relations.find(r => r.id === setId);
   if (!rel || rel.students.includes(studentId)) return;
-  saveWithUndo();
+  A.saveWithUndo();
   rel.students.push(studentId);
-  saveState();
+  A.saveState();
   renderRelationsPanel();
-  renderDesks();
+  A.renderDesks();
 }
 
 function relRemoveStudent(setId, studentId) {
-  const rel = getData().relations.find(r => r.id === setId);
+  const rel = A.getData().relations.find(r => r.id === setId);
   if (!rel) return;
-  saveWithUndo();
+  A.saveWithUndo();
   rel.students = rel.students.filter(id => id !== studentId);
-  saveState();
+  A.saveState();
   renderRelationsPanel();
-  renderDesks();
+  A.renderDesks();
 }
 
 /** Afegeix diversos alumnes de cop a un conjunt. */
 function relAddMultiple(setId) {
-  const data = getData();
+  const data = A.getData();
   const rel = data.relations.find(r => r.id === setId);
   if (!rel) return;
   if (!data.students.length) { toast('Afegeix alumnes primer', 'error'); return; }
-  openStudentPicker({
+  A.openStudentPicker({
     title: `${REL_LABEL[rel.type]} — triar alumnes`,
     students: data.students,
     preselected: rel.students,
     confirmLabel: 'Aplicar',
     onConfirm: ids => {
-      saveWithUndo();
+      A.saveWithUndo();
       rel.students = data.students.filter(s => ids.includes(s.id)).map(s => s.id);
-      saveState();
+      A.saveState();
       renderRelationsPanel();
-      renderDesks();
+      A.renderDesks();
       toast(`${REL_LABEL[rel.type]}: ${pluralize(rel.students.length, 'alumne')}`, 'success');
     }
   });
 }
 
-/** Crea un conjunt nou triant-hi diversos alumnes de cop. */
-function relAddSetWithStudents(type) {
-  const data = getData();
-  if (!data.students.length) { toast('Afegeix alumnes primer', 'error'); return; }
-  openStudentPicker({
-    title: `Nou conjunt per ${type === REL_TOGETHER ? 'ajuntar' : 'separar'}`,
-    students: data.students,
-    confirmLabel: 'Crear conjunt',
-    onConfirm: ids => {
-      if (ids.length < 2) { toast('Tria com a mínim dos alumnes', 'error'); return; }
-      saveWithUndo();
-      data.relations.push({ id: uid('rel'), type, students: data.students.filter(s => ids.includes(s.id)).map(s => s.id) });
-      saveState();
-      renderRelationsPanel();
-      renderDesks();
-      toast(`Conjunt creat amb ${pluralize(ids.length, 'alumne')}`, 'success');
-    }
-  });
+/** Porta la vista al conjunt: selecciona els pupitres implicats i els enquadra. */
+function relFocus(setId) {
+  const data = A.getData();
+  const result = evaluateRelations(data).results.find(r => r.id === setId);
+  if (!result) return;
+  const why = explainRelation(data, result, null);
+  const deskIds = why ? why.deskIds : [];
+  if (!deskIds.length) { toast('Cap membre del conjunt té lloc assignat', 'info'); return; }
+  A.focusDesks(deskIds);
 }
 
 /** Treu un alumne de totes les relacions (en eliminar-lo del grup). */
@@ -392,3 +503,21 @@ function removeStudentFromRelations(data, studentId) {
   data.relations.forEach(rel => { rel.students = rel.students.filter(id => id !== studentId); });
   data.relations = data.relations.filter(rel => rel.students.length > 0);
 }
+
+A.registerActions({
+  relAddSet: node => relAddSet(node.dataset.type),
+  relRemoveSet: node => relRemoveSet(node.dataset.rel),
+  relAddStudent: node => { relAddStudent(node.dataset.rel, node.value); node.value = ''; },
+  relRemoveStudent: node => relRemoveStudent(node.dataset.rel, node.dataset.sid),
+  relAddMultiple: node => relAddMultiple(node.dataset.rel),
+  relFocus: node => relFocus(node.dataset.rel)
+});
+
+Object.assign(A, {
+  buildNeighborGraph, areNeighbors, buildStudentDeskMap, findRelationContradictions,
+  evaluateRelations, connectedComponents, explainRelation, largestUsableBlock, spreadCapacity,
+  relationLines, relationDots, relationSets, renderRelationsPanel, renderRelationScore,
+  removeStudentFromRelations
+});
+
+})(window.AulaMap);

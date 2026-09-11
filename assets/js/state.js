@@ -3,7 +3,10 @@
  * Model de dades, persistència a localStorage, migració de versions antigues
  * i pila única de desfer/refer.
  */
+(function (A) {
 'use strict';
+
+const { el, uid, toast, STORAGE_KEY, LEGACY_KEYS, REL_TOGETHER, REL_SEPARATE } = A;
 
 /* ── Model ───────────────────────────────────────────── */
 
@@ -51,6 +54,7 @@ function defaultState() {
 
 /* ── Normalització i migració ────────────────────────── */
 
+/** Esquema d'equips net: un pupitre per alumne vàlid, sense duplicats. */
 function normalizeTeamLayout(layout, validStudents) {
   if (!layout || !Array.isArray(layout.desks)) return null;
   const seenDesks = new Set(), seenStudents = new Set();
@@ -199,6 +203,8 @@ let state = loadState();
 
 /* ── Accés i persistència ────────────────────────────── */
 
+function getState() { return state; }
+
 /** Configuració activa (dades de l'aula que s'estan editant). */
 function getData() {
   const docent = state.docents[state.currentDocent];
@@ -238,7 +244,7 @@ function saveWithUndo() { pushUndo(); saveState(); }
 function applySnapshot(snapshot) {
   state = JSON.parse(snapshot);
   saveState();
-  renderAll();
+  A.renderAll();
   updateUndoButtons();
 }
 
@@ -254,7 +260,19 @@ function redo() {
   applySnapshot(redoStack.pop());
 }
 
+/** Nombre de passos que es poden desfer (per a les proves). */
+function undoDepth() { return undoStack.length; }
+
 function updateUndoButtons() {
   el('undoBtn').disabled = !undoStack.length;
   el('redoBtn').disabled = !redoStack.length;
 }
+
+A.registerActions({ undo: () => undo(), redo: () => redo() });
+
+Object.assign(A, {
+  defaultTeamsData, defaultConfigData, defaultState, normalizeConfigData, normalizeTeamLayout,
+  getState, getData, getTeams, saveState, pushUndo, saveWithUndo, undo, redo, undoDepth, updateUndoButtons
+});
+
+})(window.AulaMap);

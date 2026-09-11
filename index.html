@@ -6,6 +6,11 @@
 <title>AulaMap — Planificador de distribució d'aula</title>
 <meta name="description" content="Eina per planificar la distribució de l'aula i formar equips de treball, amb relacions d'ajuntar i separar entre alumnes.">
 <meta name="color-scheme" content="dark">
+<script>
+  // Tema abans de pintar res, per evitar el parpelleig en obrir en mode clar.
+  try { document.documentElement.dataset.theme = localStorage.getItem('aulamap_theme') === 'light' ? 'light' : 'dark'; }
+  catch (e) { document.documentElement.dataset.theme = 'dark'; }
+</script>
 <link rel="icon" href="assets/img/favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
@@ -34,54 +39,57 @@
 
 <div class="docent-bar">
   <span class="lbl"><span class="mi mi-xs">account_circle</span> Perfil:</span>
-  <select id="docentSelect" onchange="switchDocent()" aria-label="Grup"></select>
-  <button class="btn btn-sm" onclick="showEditDocent()" title="Editar nom del grup"><span class="mi mi-xs">edit</span></button>
-  <button class="btn btn-sm" onclick="showAddDocent()" title="Nou grup"><span class="mi mi-xs">person_add</span></button>
-  <button class="btn btn-sm btn-danger" onclick="removeDocent()" title="Eliminar grup"><span class="mi mi-xs">person_remove</span></button>
+  <select id="docentSelect" data-change="switchDocent" aria-label="Grup"></select>
+  <button class="btn btn-sm" data-action="showEditDocent" title="Editar nom del grup"><span class="mi mi-xs">edit</span></button>
+  <button class="btn btn-sm" data-action="showAddDocent" title="Nou grup"><span class="mi mi-xs">person_add</span></button>
+  <button class="btn btn-sm btn-danger" data-action="removeDocent" title="Eliminar grup"><span class="mi mi-xs">person_remove</span></button>
   <div style="margin-left:auto;display:flex;align-items:center;gap:5px;position:relative;">
-    <button class="btn btn-icon btn-sm" id="undoBtn" onclick="undo()" disabled title="Desfer (Ctrl+Z)"><span class="mi mi-sm">undo</span></button>
-    <button class="btn btn-icon btn-sm" id="redoBtn" onclick="redo()" disabled title="Refer (Ctrl+Y)"><span class="mi mi-sm">redo</span></button>
-    <button class="btn btn-icon btn-sm" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="Menú"><span class="mi">more_vert</span></button>
-    <input type="file" id="fileInput" accept=".json,.aulamap" style="display:none" onchange="handleFileLoad(event)">
+    <button class="btn btn-icon btn-sm" id="undoBtn" data-action="undo" disabled title="Desfer (Ctrl+Z)"><span class="mi mi-sm">undo</span></button>
+    <button class="btn btn-icon btn-sm" id="redoBtn" data-action="redo" disabled title="Refer (Ctrl+Y)"><span class="mi mi-sm">redo</span></button>
+    <button class="btn btn-icon btn-sm" id="headerMenuBtn" data-action="toggleHeaderMenu" title="Menú"><span class="mi">more_vert</span></button>
+    <input type="file" id="fileInput" accept=".json,.aulamap" style="display:none" data-change="handleFileLoad">
     <div class="header-dropdown" id="headerDropdown">
-      <button class="header-dropdown-item" onclick="exportPDF();closeHeaderMenu()"><span class="mi">picture_as_pdf</span> Exportar PDF</button>
-      <button class="header-dropdown-item" onclick="saveToFile();closeHeaderMenu()"><span class="mi">save</span> Desar fitxer</button>
-      <button class="header-dropdown-item" onclick="loadFromFile();closeHeaderMenu()"><span class="mi">folder_open</span> Carregar fitxer</button>
+      <button class="header-dropdown-item" id="themeBtn" data-action="toggleTheme"><span class="mi">light_mode</span> Mode clar</button>
       <div class="header-dropdown-sep"></div>
-      <button class="header-dropdown-item" onclick="showAddConfig();closeHeaderMenu()"><span class="mi">note_add</span> Nova configuració</button>
-      <button class="header-dropdown-item" onclick="showEditConfig();closeHeaderMenu()"><span class="mi">edit_note</span> Reanomenar configuració</button>
-      <button class="header-dropdown-item" onclick="removeConfig();closeHeaderMenu()"><span class="mi">delete_sweep</span> Eliminar configuració</button>
+      <button class="header-dropdown-item" data-action="exportPDF"><span class="mi">picture_as_pdf</span> Exportar PDF</button>
+      <button class="header-dropdown-item" data-action="showExportCsv"><span class="mi">table_view</span> Exportar CSV</button>
+      <button class="header-dropdown-item" data-action="saveToFile"><span class="mi">save</span> Desar fitxer</button>
+      <button class="header-dropdown-item" data-action="loadFromFile"><span class="mi">folder_open</span> Carregar fitxer</button>
       <div class="header-dropdown-sep"></div>
-      <button class="header-dropdown-item danger" onclick="confirmClearAll();closeHeaderMenu()"><span class="mi">delete_forever</span> Netejar tot</button>
+      <button class="header-dropdown-item" data-action="showAddConfig"><span class="mi">note_add</span> Nova configuració</button>
+      <button class="header-dropdown-item" data-action="showEditConfig"><span class="mi">edit_note</span> Reanomenar configuració</button>
+      <button class="header-dropdown-item" data-action="removeConfig"><span class="mi">delete_sweep</span> Eliminar configuració</button>
+      <div class="header-dropdown-sep"></div>
+      <button class="header-dropdown-item danger" data-action="confirmClearAll"><span class="mi">delete_forever</span> Netejar tot</button>
     </div>
   </div>
-  <select id="configSelect" onchange="switchConfig()" aria-label="Configuració" title="Configuració"></select>
+  <select id="configSelect" data-change="switchConfig" aria-label="Configuració" title="Configuració"></select>
 </div>
 
 <div class="app-body">
   <aside class="sidebar" id="sidebarPanel">
-    <button class="sidebar-close-btn" onclick="closeMobileSidebar()" aria-label="Tancar"><span class="mi">close</span></button>
+    <button class="sidebar-close-btn" data-action="closeMobileSidebar" aria-label="Tancar"><span class="mi">close</span></button>
     <div class="sidebar-tabs">
-      <div class="sidebar-tab active" data-tab="info" onclick="switchTab('info')">Info</div>
-      <div class="sidebar-tab" data-tab="alumnes" onclick="switchTab('alumnes')">Alumnes</div>
-      <div class="sidebar-tab" data-tab="relacions" onclick="switchTab('relacions')">Relacions</div>
-      <div class="sidebar-tab" data-tab="layout" onclick="switchTab('layout')">Disseny</div>
-      <div class="sidebar-tab" data-tab="equips" onclick="switchTab('equips')" style="background-color:var(--orange-bg);color:var(--orange);"><span class="mi mi-xs" style="font-size:11px">groups</span> Equips</div>
+      <div class="sidebar-tab active" data-tab="info" data-action="switchTab">Info</div>
+      <div class="sidebar-tab" data-tab="alumnes" data-action="switchTab">Alumnes</div>
+      <div class="sidebar-tab" data-tab="relacions" data-action="switchTab">Relacions</div>
+      <div class="sidebar-tab" data-tab="layout" data-action="switchTab">Disseny</div>
+      <div class="sidebar-tab" data-tab="equips" data-action="switchTab" style="background-color:var(--orange-bg);color:var(--orange);"><span class="mi mi-xs" style="font-size:11px">groups</span> Equips</div>
     </div>
 
     <div class="sidebar-content">
       <!-- INFO -->
       <div class="sidebar-panel active" id="panel-info">
         <div class="field"><label for="centreName">Centre</label>
-          <input type="text" id="centreName" placeholder="Institut Sabadell" oninput="updateInfoField('centreName',this.value)"></div>
+          <input type="text" id="centreName" placeholder="Institut Sabadell" data-input="updateInfoField" data-field="centreName"></div>
         <div class="field-row">
           <div class="field"><label for="curs">Curs</label>
-            <input type="text" id="curs" placeholder="2025-2026" oninput="updateInfoField('curs',this.value)"></div>
+            <input type="text" id="curs" placeholder="2025-2026" data-input="updateInfoField" data-field="curs"></div>
           <div class="field"><label for="nivell">Nivell / Grup</label>
-            <input type="text" id="nivell" placeholder="PFI Informàtica" oninput="updateInfoField('nivell',this.value)"></div>
+            <input type="text" id="nivell" placeholder="PFI Informàtica" data-input="updateInfoField" data-field="nivell"></div>
         </div>
         <div class="field"><label for="aula">Aula</label>
-          <input type="text" id="aula" placeholder="Aula 201" oninput="updateInfoField('aula',this.value)"></div>
+          <input type="text" id="aula" placeholder="Aula 201" data-input="updateInfoField" data-field="aula"></div>
         <div class="field-row">
           <div class="field"><label for="numAlumnes">Alumnes</label><input type="number" id="numAlumnes" value="0" readonly style="opacity:0.5"></div>
           <div class="field"><label for="numSeated">Assignats</label><input type="number" id="numSeated" value="0" readonly style="opacity:0.5"></div>
@@ -96,17 +104,21 @@
       <!-- ALUMNES -->
       <div class="sidebar-panel" id="panel-alumnes">
         <div class="add-form" style="flex-shrink:0;">
-          <input type="text" id="newStudentName" placeholder="Nom de l'alumne/a..." onkeydown="if(event.key==='Enter')addStudent()">
-          <button class="btn btn-primary btn-sm" onclick="addStudent()" title="Afegir"><span class="mi mi-xs">add</span></button>
+          <input type="text" id="newStudentName" placeholder="Nom de l'alumne/a..." data-keydown="addStudentOnEnter">
+          <button class="btn btn-primary btn-sm" data-action="addStudent" title="Afegir"><span class="mi mi-xs">add</span></button>
         </div>
         <div class="field" style="margin-bottom:6px;flex-shrink:0;">
-          <input type="text" id="studentSearch" placeholder="Cerca..." oninput="renderStudentList()" style="font-size:11px;padding:5px 8px">
+          <input type="text" id="studentSearch" placeholder="Cerca..." data-input="renderStudentList" style="font-size:11px;padding:5px 8px">
         </div>
         <div id="studentList" style="flex:1;overflow-y:auto;min-height:0;"></div>
         <div id="studentCount" style="text-align:center;font-size:10px;color:var(--text3);padding:4px 0;flex-shrink:0;"></div>
         <div style="display:flex;gap:5px;margin-top:8px;flex-shrink:0;">
-          <button class="btn btn-sm" onclick="showBulkAdd()" style="flex:1"><span class="mi mi-xs">group_add</span> Afegir múltiples</button>
-          <button class="btn btn-sm" onclick="showImportFromProfile()" style="flex:1"><span class="mi mi-xs">people</span> Importar d'un perfil</button>
+          <button class="btn btn-sm" data-action="showBulkAdd" style="flex:1"><span class="mi mi-xs">group_add</span> Afegir múltiples</button>
+          <button class="btn btn-sm" data-action="showImportFromProfile" style="flex:1"><span class="mi mi-xs">people</span> Importar d'un perfil</button>
+        </div>
+        <div style="display:flex;gap:5px;margin-top:5px;flex-shrink:0;">
+          <button class="btn btn-sm" data-action="showImportCsv" style="flex:1"><span class="mi mi-xs">upload_file</span> Importar CSV</button>
+          <button class="btn btn-sm" data-action="showExportCsv" style="flex:1"><span class="mi mi-xs">table_view</span> Exportar CSV</button>
         </div>
       </div>
 
@@ -121,14 +133,14 @@
             <div class="cset-title together"><span class="mi">link</span> Ajuntar</div>
             <div id="relTogetherSets"></div>
             <div class="cset-actions">
-              <button class="btn btn-sm" onclick="relAddSet('together')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
+              <button class="btn btn-sm" data-action="relAddSet" data-type="together" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
             </div>
           </div>
           <div class="cset-col">
             <div class="cset-title separate"><span class="mi">link_off</span> Separar</div>
             <div id="relSeparateSets"></div>
             <div class="cset-actions">
-              <button class="btn btn-sm" onclick="relAddSet('separate')" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
+              <button class="btn btn-sm" data-action="relAddSet" data-type="separate" title="Conjunt buit"><span class="mi mi-xs">add</span> Conjunt</button>
             </div>
           </div>
         </div>
@@ -142,15 +154,15 @@
         <div class="layout-grid" id="layoutGrid"></div>
         <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
         <div class="field-row">
-          <div class="field"><label for="layoutRows">Files</label><input type="number" id="layoutRows" min="1" max="10" value="4" onchange="applyCustomLayout()"></div>
-          <div class="field"><label for="layoutCols">Columnes</label><input type="number" id="layoutCols" min="1" max="10" value="5" onchange="applyCustomLayout()"></div>
+          <div class="field"><label for="layoutRows">Files</label><input type="number" id="layoutRows" min="1" max="10" value="4" data-change="applyCustomLayout"></div>
+          <div class="field"><label for="layoutCols">Columnes</label><input type="number" id="layoutCols" min="1" max="10" value="5" data-change="applyCustomLayout"></div>
         </div>
         <div class="field"><label for="layoutSpacing">Espaiat (<span id="spacingValue">20</span> px)</label>
-          <input type="range" id="layoutSpacing" min="8" max="50" value="20" oninput="updateSpacingLabel(this.value)" onchange="applyCustomLayout()" style="width:100%"></div>
-        <button class="btn btn-sm" onclick="applyCustomLayout()" style="width:100%;margin-top:4px"><span class="mi mi-xs">grid_view</span> Aplicar</button>
+          <input type="range" id="layoutSpacing" min="8" max="50" value="20" data-input="updateSpacingLabel" data-change="applyCustomLayout" style="width:100%"></div>
+        <button class="btn btn-sm" data-action="applyCustomLayout" style="width:100%;margin-top:4px"><span class="mi mi-xs">grid_view</span> Aplicar</button>
         <hr style="border:none;border-top:1px solid var(--border);margin:12px 0">
         <div class="field"><label>Distribució lliure</label></div>
-        <button class="btn btn-sm" onclick="addFreeDesk()" style="width:100%;margin-bottom:6px"><span class="mi mi-xs">add_circle</span> Afegir pupitre</button>
+        <button class="btn btn-sm" data-action="addFreeDesk" style="width:100%;margin-bottom:6px"><span class="mi mi-xs">add_circle</span> Afegir pupitre</button>
       </div>
 
       <!-- EQUIPS -->
@@ -159,13 +171,13 @@
           <div class="eq-saved-title"><span class="mi mi-xs">bookmark</span> Equips desats</div>
           <div class="eq-saved-scroll" id="savedTeamsScroll"></div>
         </div>
-        <div class="panel-hint">Forma equips de treball amb els alumnes registrats.</div>
+        <div class="panel-hint">Forma equips de treball amb els alumnes registrats. L'esquema d'equips és independent de la distribució de l'aula.</div>
 
         <div class="equips-section">
           <div class="equips-section-title"><span class="mi mi-xs">tune</span> Configuració</div>
           <div class="equips-config-row">
             <div class="field"><label for="teamSize">Alumnes per equip</label>
-              <input type="number" id="teamSize" min="1" value="2" onchange="setTeamSize(this.value)"></div>
+              <input type="number" id="teamSize" min="1" value="2" data-change="setTeamSize"></div>
             <div class="field"><label for="teamCount">Nombre d'equips</label>
               <input type="number" id="teamCount" value="0" readonly style="opacity:0.5"></div>
           </div>
@@ -174,7 +186,7 @@
 
         <div class="equips-section">
           <label class="equips-toggle">
-            <input type="checkbox" id="teamUseCompetency" onchange="toggleUseCompetency()">
+            <input type="checkbox" id="teamUseCompetency" data-change="toggleUseCompetency">
             <span>Nivell de competència</span>
           </label>
           <div id="teamCompetencySection" style="display:none;max-height:200px;overflow-y:auto;">
@@ -184,7 +196,7 @@
             </table>
           </div>
           <label class="equips-toggle" style="margin-top:4px;">
-            <input type="checkbox" id="teamHeterogeneous" disabled onchange="toggleHeterogeneous()">
+            <input type="checkbox" id="teamHeterogeneous" disabled data-change="toggleHeterogeneous">
             <span>Equips heterogenis</span>
           </label>
         </div>
@@ -192,7 +204,7 @@
         <div class="equips-section">
           <div class="equips-section-title" style="justify-content:space-between;">
             <span style="display:flex;align-items:center;gap:5px;"><span class="mi mi-xs">rule</span> Restriccions</span>
-            <button class="btn btn-sm" onclick="copyRelationsToTeams()" title="Importar els conjunts del panell Relacions"><span class="mi mi-xs">content_copy</span> Copiar de Relacions</button>
+            <button class="btn btn-sm" data-action="copyRelationsToTeams" title="Importar els conjunts del panell Relacions"><span class="mi mi-xs">content_copy</span> Copiar de Relacions</button>
           </div>
           <div id="teamWarning" class="eq-warning" style="display:none;"></div>
           <div class="cset-cols">
@@ -200,26 +212,26 @@
               <div class="cset-title together"><span class="mi">link</span> Ajuntar</div>
               <div id="teamTogetherSets"></div>
               <div class="cset-actions">
-                <button class="btn btn-sm" onclick="teamAddSet('together')"><span class="mi mi-xs">add</span> Conjunt</button>
+                <button class="btn btn-sm" data-action="teamAddSet" data-type="together"><span class="mi mi-xs">add</span> Conjunt</button>
               </div>
             </div>
             <div class="cset-col">
               <div class="cset-title separate"><span class="mi">link_off</span> Separar</div>
               <div id="teamSeparateSets"></div>
               <div class="cset-actions">
-                <button class="btn btn-sm" onclick="teamAddSet('separate')"><span class="mi mi-xs">add</span> Conjunt</button>
+                <button class="btn btn-sm" data-action="teamAddSet" data-type="separate"><span class="mi mi-xs">add</span> Conjunt</button>
               </div>
             </div>
           </div>
         </div>
 
-        <button class="btn" id="teamCreateBtn" onclick="createTeams()" style="width:100%;margin-top:6px;background:var(--orange);border-color:var(--orange);color:#000;" disabled>
+        <button class="btn btn-orange" id="teamCreateBtn" data-action="createTeams" style="width:100%;margin-top:6px;" disabled>
           <span class="mi mi-xs">groups</span> Formar equips
         </button>
         <div id="teamResults" class="eq-results"></div>
         <div id="teamExportRow" class="eq-export-row" style="display:none;">
-          <button class="btn btn-sm" onclick="exportTeams()" style="flex:1"><span class="mi mi-xs">download</span> Exportar equips</button>
-          <button class="btn btn-sm btn-primary" onclick="saveCurrentTeam()" style="flex:1"><span class="mi mi-xs">save</span> Desar equips</button>
+          <button class="btn btn-sm" data-action="exportTeams" style="flex:1"><span class="mi mi-xs">download</span> Exportar equips</button>
+          <button class="btn btn-sm btn-primary" data-action="saveCurrentTeam" style="flex:1"><span class="mi mi-xs">save</span> Desar equips</button>
         </div>
       </div>
     </div>
@@ -230,16 +242,16 @@
   <main class="main-area">
     <div class="toolbar">
       <div class="view-toggle">
-        <button class="view-toggle-btn active" id="viewToggleAula" onclick="switchCanvasView('aula')"><span class="mi mi-xs">grid_view</span> <span>Aula</span></button>
-        <button class="view-toggle-btn" id="viewToggleEquips" onclick="switchCanvasView('equips')"><span class="mi mi-xs">groups</span> <span>Equips</span></button>
+        <button class="view-toggle-btn active" id="viewToggleAula" data-action="switchCanvasView" data-value="aula"><span class="mi mi-xs">grid_view</span> <span>Aula</span></button>
+        <button class="view-toggle-btn" id="viewToggleEquips" data-action="switchCanvasView" data-value="equips"><span class="mi mi-xs">groups</span> <span>Equips</span></button>
       </div>
       <span class="active-team-badge" id="activeTeamBadge" style="display:none"></span>
       <div class="toolbar-sep" id="toolbarSep0"></div>
       <span class="toolbar-label" id="toolbarAulaTools">Eines:</span>
-      <button class="btn btn-sm" id="toolbarClearBtn" onclick="clearAllSeats()"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
-      <button class="btn btn-sm" id="arrangeTeamsBtn" onclick="autoArrangeTeamDesks()" style="display:none"><span class="mi mi-xs">dashboard</span> Organitzar taules</button>
-      <button class="btn btn-sm" id="deleteSelectedBtn" onclick="removeSelectedDesks()" title="Eliminar els pupitres seleccionats (Supr). Els alumnes es conserven." hidden>Eliminar seleccionats</button>
-      <select id="moveSelectedTeam" aria-label="Moure els alumnes seleccionats a un equip" onchange="if(this.value !== '') moveStudentsToTeam(selectedTeamStudents(), Number(this.value))" hidden></select>
+      <button class="btn btn-sm" id="toolbarClearBtn" data-action="clearAllSeats"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
+      <button class="btn btn-sm" id="arrangeTeamsBtn" data-action="arrangeTeamDesks" style="display:none"><span class="mi mi-xs">dashboard</span> Organitzar taules</button>
+      <button class="btn btn-sm btn-danger" id="deleteSelectedBtn" data-action="removeSelectedDesks" title="Eliminar els pupitres seleccionats (Supr). Els alumnes es conserven." hidden><span class="mi mi-xs">delete</span> Eliminar seleccionats</button>
+      <select id="moveSelectedTeam" aria-label="Moure els alumnes seleccionats a un equip" data-change="moveSelectedTeam" hidden></select>
       <div class="toolbar-sep" id="toolbarSep1"></div>
       <span class="toolbar-label" id="deskCountLabel">Pupitres: 0</span>
       <div style="flex:1"></div>
@@ -257,31 +269,31 @@
           </div>
         </div>
       </div>
-      <button class="btn btn-primary fab-auto" id="autoAssignFab" onclick="showAutoAssign()"><span class="mi mi-sm">auto_awesome</span> Auto-assignar</button>
-      <button class="fab-teams" id="fabTeamsBtn" onclick="createTeamsFromFab()"><span class="mi mi-sm">groups</span> Formar equips</button>
-      <button class="btn btn-icon" id="invertTeacherBtn" onclick="toggleTeacherPosition()" title="Taula del professorat a baix"
+      <button class="btn btn-primary fab-auto" id="autoAssignFab" data-action="showAutoAssign"><span class="mi mi-sm">auto_awesome</span> Auto-assignar</button>
+      <button class="fab-teams" id="fabTeamsBtn" data-action="createTeamsFromFab"><span class="mi mi-sm">groups</span> Formar equips</button>
+      <button class="btn btn-icon" id="invertTeacherBtn" data-action="toggleTeacherPosition" title="Taula del professorat a baix"
               style="position:absolute;bottom:12px;left:12px;z-index:50;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);width:32px;height:32px;">
         <span class="mi mi-sm">sync</span>
       </button>
       <div class="zoom-controls">
-        <button class="btn btn-icon" onclick="zoomIn()" title="Ampliar"><span class="mi mi-sm">zoom_in</span></button>
+        <button class="btn btn-icon" data-action="zoomIn" title="Ampliar"><span class="mi mi-sm">zoom_in</span></button>
         <div class="zoom-label" id="zoomLabel">100%</div>
-        <button class="btn btn-icon" onclick="zoomOut()" title="Reduir"><span class="mi mi-sm">zoom_out</span></button>
-        <button class="btn btn-icon" onclick="zoomReset()" title="Enquadrar" style="margin-top:4px"><span class="mi mi-sm">fit_screen</span></button>
+        <button class="btn btn-icon" data-action="zoomOut" title="Reduir"><span class="mi mi-sm">zoom_out</span></button>
+        <button class="btn btn-icon" data-action="zoomReset" title="Enquadrar" style="margin-top:4px"><span class="mi mi-sm">fit_screen</span></button>
       </div>
     </div>
   </main>
 </div>
 
 <nav class="mobile-bottom-nav" id="mobileBottomNav">
-  <button class="mobile-nav-btn" data-nav="info" onclick="mobileNav('info')"><span class="mi">info</span>Info</button>
-  <button class="mobile-nav-btn" data-nav="alumnes" onclick="mobileNav('alumnes')"><span class="mi">people</span>Alumnes</button>
-  <button class="mobile-nav-btn" data-nav="relacions" onclick="mobileNav('relacions')"><span class="mi">link</span>Relacions</button>
-  <button class="mobile-nav-btn" data-nav="layout" onclick="mobileNav('layout')"><span class="mi">dashboard</span>Disseny</button>
-  <button class="mobile-nav-btn" data-nav="equips" onclick="mobileNav('equips')"><span class="mi">groups</span>Equips</button>
+  <button class="mobile-nav-btn" data-nav="info" data-action="mobileNav"><span class="mi">info</span>Info</button>
+  <button class="mobile-nav-btn" data-nav="alumnes" data-action="mobileNav"><span class="mi">people</span>Alumnes</button>
+  <button class="mobile-nav-btn" data-nav="relacions" data-action="mobileNav"><span class="mi">link</span>Relacions</button>
+  <button class="mobile-nav-btn" data-nav="layout" data-action="mobileNav"><span class="mi">dashboard</span>Disseny</button>
+  <button class="mobile-nav-btn" data-nav="equips" data-action="mobileNav"><span class="mi">groups</span>Equips</button>
 </nav>
 
-<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalContent"></div></div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalContent"></div></div>
 <div class="toast-container" id="toastContainer"></div>
 <div class="pdf-area" id="pdfArea"></div>
 

@@ -151,8 +151,10 @@
   .desk .del-desk-btn{display:flex!important;}
 
   /* Team lock buttons always visible on mobile */
-  .team-table-member .tm-lock-btn{display:flex!important;}
   .eq-group-card .eq-member-lock-btn{display:flex!important;}
+
+  /* Eines de la selecció múltiple */
+  #moveSelectedTeam{max-width:130px;}
 
   /* Fab teams on mobile */
   .fab-teams{bottom:60px;right:8px;padding:7px 14px;font-size:12px;border-radius:24px;}

@@ -1,8 +1,14 @@
 /**
  * AulaMap — Distribució de l'aula
- * Plantilles de pupitres, dibuix del llenç, assignació d'alumnes i moviment lliure.
+ *
+ * Plantilles de pupitres, dibuix del llenç, assignació d'alumnes i moviment
+ * lliure. El mateix dibuix serveix per al mode Equips: aleshores els pupitres
+ * surten de l'esquema d'equips (`getCanvasData`) i no de la distribució real.
  */
+(function (A) {
 'use strict';
+
+const { el, esc, uid, toast, pluralize, initialOf, openModal, closeModal, appConfirm, DESK_W, DESK_H } = A;
 
 const LAYOUTS = [
   { id: 'rows',    name: 'Files',    icon: 'grid_view' },
@@ -17,32 +23,32 @@ const LAYOUTS = [
 /* ── Plantilles ──────────────────────────────────────── */
 
 function renderLayoutOptions() {
-  const data = getData();
+  const data = A.getData();
   el('layoutGrid').innerHTML = LAYOUTS.map(layout => `
-    <div class="layout-option ${data.layoutType === layout.id ? 'selected' : ''}" onclick="selectLayout('${layout.id}')">
+    <div class="layout-option ${data.layoutType === layout.id ? 'selected' : ''}" data-action="selectLayout" data-value="${layout.id}">
       <div class="li"><span class="mi">${layout.icon}</span></div>
       <div class="ln">${layout.name}</div>
     </div>`).join('');
 }
 
 function selectLayout(type) {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   data.layoutType = type;
   if (type === 'free') {
     if (!data.desks.length) data.desks = [{ id: uid('d'), x: 0, y: 0 }];
   } else {
     generateDesks();
   }
-  saveState();
+  A.saveState();
   renderLayoutOptions();
   renderDesks();
-  updateCounts();
+  A.updateCounts();
 }
 
 /** Genera els pupitres de la plantilla activa, conservant les assignacions possibles. */
 function generateDesks() {
-  const data = getData();
+  const data = A.getData();
   const { layoutRows: rows, layoutCols: cols, layoutSpacing: spacing } = data;
   const desks = [];
   const stepX = DESK_W + spacing;
@@ -130,8 +136,8 @@ function centerDesks(desks) {
 }
 
 function applyCustomLayout() {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   data.layoutRows = Math.max(1, Math.min(10, +el('layoutRows').value || 1));
   data.layoutCols = Math.max(1, Math.min(10, +el('layoutCols').value || 1));
   data.layoutSpacing = +el('layoutSpacing').value;
@@ -139,15 +145,15 @@ function applyCustomLayout() {
   el('layoutCols').value = data.layoutCols;
   if (data.layoutType === 'free') data.layoutType = 'rows';
   generateDesks();
-  saveState();
+  A.saveState();
   renderLayoutOptions();
   renderDesks();
-  updateCounts();
+  A.updateCounts();
 }
 
 function addFreeDesk() {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   data.layoutType = 'free';
   let x = 20, y = 20;
   if (data.desks.length) {
@@ -157,56 +163,69 @@ function addFreeDesk() {
     if (x > 800) { x = 20; y = last.y + DESK_H + 20; }
   }
   data.desks.push({ id: uid('d'), x, y });
-  saveState();
+  A.saveState();
   renderLayoutOptions();
   renderDesks();
-  updateCounts();
+  A.updateCounts();
   toast('Pupitre afegit', 'success');
 }
 
-function removeDeskById(id) {
-  removeDesksByIds([id]);
-}
-
-function removeSelectedDesks() {
-  removeDesksByIds([...tableSelection]);
-}
-
+/**
+ * Paperera conjunta: elimina un pupitre o tota la selecció, sempre amb
+ * confirmació i amb una sola entrada de desfer. Els alumnes es conserven.
+ */
 function removeDesksByIds(ids) {
-  const data = getCanvasData();
-  const selected = new Set(ids.filter(id => data.desks.some(desk => desk.id === id)));
-  if (!selected.size) return;
-  endTableGesture();
-  saveWithUndo();
-  data.desks = data.desks.filter(d => !selected.has(d.id));
-  selected.forEach(id => {
-    delete data.assignments[id];
-    delete data.lockedDesks[id];
-  });
-  data.layoutType = 'free';
-  clearTableSelection();
-  saveState();
-  renderLayoutOptions();
-  renderDesks();
-  renderStudentList();
-  renderRelationsPanel();
-  updateCounts();
+  const data = A.getCanvasData();
+  const selected = [...new Set(ids)].filter(id => data.desks.some(desk => desk.id === id));
+  if (!selected.length) return;
+  const teamsMode = A.view.current === 'equips';
+  const seated = selected.filter(id => data.assignments[id]).length;
+  const locked = selected.filter(id => data.lockedDesks[id] && data.assignments[id]).length;
+  const detail = teamsMode
+    ? `${pluralize(seated, 'alumne')} ${seated === 1 ? 'es quedarà' : 'es quedaran'} sense pupitre a l'esquema, però ${seated === 1 ? 'continua' : 'continuen'} al seu equip: amb "Organitzar taules" hi tornen a tenir lloc.`
+    : [seated ? `${pluralize(seated, 'alumne')} ${seated === 1 ? 'es quedarà' : 'es quedaran'} sense lloc.` : 'Cap pupitre està ocupat.',
+       locked ? `${pluralize(locked, 'alumne')} ${locked === 1 ? 'està fixat' : 'estan fixats'} amb cadenat.` : ''].filter(Boolean).join(' ');
+
+  appConfirm(`Eliminar ${pluralize(selected.length, 'pupitre')}?`, detail, () => {
+    const remove = new Set(selected);
+    A.endTableGesture();
+    A.saveWithUndo();
+    data.desks = data.desks.filter(d => !remove.has(d.id));
+    remove.forEach(id => {
+      delete data.assignments[id];
+      delete data.lockedDesks[id];
+    });
+    data.layoutType = 'free';
+    A.clearTableSelection();
+    A.saveState();
+    renderLayoutOptions();
+    renderDesks();
+    A.renderStudentList();
+    A.renderRelationsPanel();
+    A.updateCounts();
+    toast(`${pluralize(selected.length, 'pupitre')} ${selected.length === 1 ? 'eliminat' : 'eliminats'}`, 'success');
+  }, 'Eliminar');
 }
+
+function removeDeskById(id) { removeDesksByIds([id]); }
+
+function removeSelectedDesks() { removeDesksByIds([...A.tableSelection]); }
 
 /* ── Dibuix ──────────────────────────────────────────── */
 
 function renderDesks() {
-  const data = getCanvasData();
+  const data = A.getCanvasData();
   const container = el('desksContainer');
+  const teamsMode = A.view.current === 'equips';
 
-  if (!data.desks.length && data.layoutType !== 'free') { generateDesks(); saveState(); }
+  if (!data.desks.length && data.layoutType !== 'free') { generateDesks(); A.saveState(); }
   if (!data.desks.length) {
     container.querySelectorAll('.desk').forEach(node => node.remove());
     el('relationSvg').innerHTML = '';
     el('deskCountLabel').textContent = 'Pupitres: 0';
-    renderRelationScore();
-    renderTeamOverlays();
-    refreshTableSelection();
+    A.renderRelationScore();
+    A.renderTeamOverlays();
+    A.refreshTableSelection();
     return;
   }
 
@@ -215,37 +234,39 @@ function renderDesks() {
   container.style.width = (maxX + 40) + 'px';
   container.style.height = (maxY + 40) + 'px';
 
-  const evaluation = currentCanvasView === 'aula' ? evaluateRelations(data) : null;
-  const deskDots = evaluation ? relationDots(data, evaluation) : {};
+  const evaluation = teamsMode ? null : A.evaluateRelations(data);
+  const deskDots = evaluation ? A.relationDots(data, evaluation) : {};
   drawRelationLines(data);
   el('relationSvg').setAttribute('width', maxX + 40);
   el('relationSvg').setAttribute('height', maxY + 40);
 
+  const teams = A.getTeams();
   const html = data.desks.map((desk, index) => {
     const studentId = data.assignments[desk.id];
-    const student = studentId ? findStudent(studentId) : null;
-    const teamIndex = currentCanvasView === 'equips' ? teamIndexForDesk(desk.id) : -1;
+    const student = studentId ? A.findStudent(studentId) : null;
+    const teamIndex = teamsMode ? A.teamIndexForDesk(desk.id) : -1;
     const inTeam = teamIndex >= 0;
-    const locked = inTeam ? getTeams().lockedStudents[studentId] !== undefined : !!data.lockedDesks[desk.id];
-    const lockAction = inTeam ? `toggleStudentLock('${esc(studentId)}',${teamIndex})` : `toggleDeskLock('${esc(desk.id)}')`;
-    const dots = currentCanvasView === 'equips' ? '' : [...new Set(deskDots[desk.id] || [])].map(kind => `<div class="cdot ${kind}"></div>`).join('');
+    const locked = inTeam ? teams.lockedStudents[studentId] !== undefined : !!data.lockedDesks[desk.id];
+    const lockAttrs = inTeam
+      ? `data-action="toggleStudentLock" data-sid="${esc(studentId)}" data-idx="${teamIndex}"`
+      : `data-action="toggleDeskLock" data-did="${esc(desk.id)}"`;
+    const dots = teamsMode ? '' : [...new Set(deskDots[desk.id] || [])].map(kind => `<div class="cdot ${kind}"></div>`).join('');
     const occupied = !!student;
     return `<div class="desk ${occupied ? 'occupied' : 'empty'}${locked ? ' locked' : ''}"
-        style="left:${desk.x}px;top:${desk.y}px" data-did="${esc(desk.id)}" ${inTeam ? `data-team-idx="${teamIndex}"` : ''}
-        ondragover="onDeskDragOver(event)" ondragleave="onDeskDragLeave(event)" ondrop="onDeskDrop(event,'${esc(desk.id)}')"
-        onclick="onDeskClick('${esc(desk.id)}')">
+        style="left:${desk.x}px;top:${desk.y}px" data-did="${esc(desk.id)}"${inTeam ? ` data-team-idx="${teamIndex}"` : ''} data-action="deskClick">
       <span class="dlbl">${index + 1}</span>
-      <div class="mv-btn" title="Moure pupitre" onpointerdown="onDeskMoveStart(event,'${esc(desk.id)}')"><span class="mi" style="font-size:10px">open_with</span></div>
+      <div class="mv-btn" title="Moure pupitre" data-action="noop" data-press="deskMove" data-did="${esc(desk.id)}"><span class="mi" style="font-size:10px">open_with</span></div>
       ${occupied ? `
-        ${currentCanvasView === 'aula' ? `<button class="rm-btn" title="Treure alumne" onclick="event.stopPropagation();unseat('${esc(desk.id)}')"><span class="mi" style="font-size:10px">close</span></button>` : ''}
-        <div class="desk-student${inTeam ? ' team-table-member' : ''}" ${inTeam ? `draggable="${!locked}" ondragstart="onTeamMemberDragStart(event,'${esc(studentId)}',${teamIndex})" ondragend="onTeamMemberDragEnd(event)"` : ''}>
+        ${teamsMode ? '' : `<button class="rm-btn" title="Treure alumne" data-action="unseat" data-did="${esc(desk.id)}"><span class="mi" style="font-size:10px">close</span></button>`}
+        <div class="desk-student${inTeam ? ' team-table-member' : ''}" draggable="${!locked}"${teamsMode ? '' : ` data-sid="${esc(studentId)}"`}
+             title="${teamsMode ? 'Arrossega’l a un altre equip' : 'Arrossega’l a un altre pupitre'}">
           <div class="dav" style="background:${esc(student.color)}">${esc(initialOf(student.name))}</div>
           <div class="sname">${esc(student.name)}</div>
         </div>
-        ${inTeam ? `<div class="desk-team-label" title="${esc(teamName(teamIndex))}">${esc(teamName(teamIndex))}${getTeams().useCompetency ? ` · ${competencyOf(studentId)}` : ''}</div>` : ''}
-        <button class="lock-btn" title="${locked ? 'Desbloquejar' : inTeam ? 'Fixar a aquest equip' : 'Fixar alumne'}" onclick="event.stopPropagation();${lockAction}"><span class="mi" style="font-size:10px">${locked ? 'lock' : 'lock_open'}</span></button>`
+        ${inTeam ? `<div class="desk-team-label" title="${esc(A.teamName(teamIndex))}">${esc(A.teamName(teamIndex))}${teams.useCompetency ? ` · ${A.competencyOf(studentId)}` : ''}</div>` : ''}
+        <button class="lock-btn" title="${locked ? 'Desbloquejar' : inTeam ? 'Fixar a aquest equip' : 'Fixar alumne'}" ${lockAttrs}><span class="mi" style="font-size:10px">${locked ? 'lock' : 'lock_open'}</span></button>`
       : '<div class="sname">Buit</div>'}
-      <button class="del-desk-btn" title="Eliminar pupitre" onclick="event.stopPropagation();removeDeskById('${esc(desk.id)}')"><span class="mi" style="font-size:10px">delete</span></button>
+      <button class="del-desk-btn" title="Eliminar pupitre" data-action="removeDesk" data-did="${esc(desk.id)}"><span class="mi" style="font-size:10px">delete</span></button>
       ${dots ? `<div class="cdots">${dots}</div>` : ''}
     </div>`;
   }).join('');
@@ -253,15 +274,15 @@ function renderDesks() {
   container.querySelectorAll('.desk').forEach(node => node.remove());
   container.insertAdjacentHTML('beforeend', html);
   el('deskCountLabel').textContent = `Pupitres: ${data.desks.length}`;
-  if (evaluation) renderRelationScore(evaluation);
-  refreshTableSelection();
-  renderTeamOverlays();
+  if (evaluation) A.renderRelationScore(evaluation);
+  A.refreshTableSelection();
+  A.renderTeamOverlays();
 }
 
 /** Dibuixa les línies entre alumnes relacionats que seuen a tocar. */
 function drawRelationLines(data) {
-  if (currentCanvasView === 'equips') { el('relationSvg').innerHTML = ''; return; }
-  const lines = relationLines(data);
+  if (A.view.current === 'equips') { el('relationSvg').innerHTML = ''; return; }
+  const lines = A.relationLines(data);
   const deskById = new Map(data.desks.map(d => [d.id, d]));
   const drawn = new Set();
   let svg = '';
@@ -281,146 +302,185 @@ function drawRelationLines(data) {
 
 let draggedStudentId = null;
 
-function onStudentDragStart(event, studentId) {
-  draggedStudentId = studentId;
-  event.dataTransfer.effectAllowed = 'move';
-  event.target.closest('.student-item')?.classList.add('dragging');
+/**
+ * Arrossegament a l'aula: des de la llista d'alumnes o des d'un pupitre ocupat
+ * (que permet intercanviar-lo amb un altre pupitre). En mode Equips, els
+ * alumnes els gestiona el llenç d'equips.
+ */
+function initSeatingDragAndDrop() {
+  document.addEventListener('dragstart', event => {
+    if (A.view.current !== 'aula') return;
+    const seat = event.target.closest?.('.desk .desk-student');
+    const item = event.target.closest?.('.student-item');
+    const source = seat || item;
+    if (!source) return;
+    draggedStudentId = source.dataset.sid;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedStudentId || '');
+    }
+    item?.classList.add('dragging');
+  });
+
+  document.addEventListener('dragend', event => {
+    event.target.closest?.('.student-item')?.classList.remove('dragging');
+    document.querySelectorAll('.drag-over-desk').forEach(node => node.classList.remove('drag-over-desk'));
+    draggedStudentId = null;
+  });
+
+  document.addEventListener('dragover', event => {
+    const desk = event.target.closest?.('.desk');
+    if (!desk || !draggedStudentId) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    desk.classList.add('drag-over-desk');
+  });
+
+  document.addEventListener('dragleave', event => {
+    const desk = event.target.closest?.('.desk');
+    if (!desk || desk.contains(event.relatedTarget)) return;
+    desk.classList.remove('drag-over-desk');
+  });
+
+  document.addEventListener('drop', event => {
+    const desk = event.target.closest?.('.desk');
+    if (!desk || !draggedStudentId) return;
+    event.preventDefault();
+    desk.classList.remove('drag-over-desk');
+    const studentId = draggedStudentId;
+    draggedStudentId = null;
+    seatStudent(desk.dataset.did, studentId);
+  });
 }
 
-function onStudentDragEnd(event) {
-  event.target.closest?.('.student-item')?.classList.remove('dragging');
-  draggedStudentId = null;
-}
-
-function onDeskDragOver(event) {
-  if (currentCanvasView === 'equips') {
-    if (teamDrag.studentId === null) return;
-    const index = teamIndexForDesk(event.currentTarget.dataset.did);
-    if (index >= 0) onTeamDragOver(event, index);
-    return;
-  }
-  if (!draggedStudentId) return;
-  event.preventDefault();
-  event.currentTarget.classList.add('drag-over-desk');
-}
-
-function onDeskDragLeave(event) {
-  event.currentTarget.classList.remove('drag-over-desk');
-  onTeamDragLeave(event);
-}
-
-/** Deixa anar un alumne sobre un pupitre; si està ocupat, els alumnes s'intercanvien. */
-function onDeskDrop(event, deskId) {
-  if (currentCanvasView === 'equips') {
-    if (teamDrag.studentId === null) return;
-    const index = teamIndexForDesk(deskId);
-    if (index >= 0) onTeamDrop(event, index);
-    return;
-  }
-  event.preventDefault();
-  event.currentTarget.classList.remove('drag-over-desk');
-  if (!draggedStudentId) return;
-  const data = getData();
+/**
+ * Asseu un alumne en un pupitre de l'aula. Si el pupitre està ocupat i l'alumne
+ * ja en tenia un altre, els dos alumnes s'intercanvien.
+ */
+function seatStudent(deskId, studentId) {
+  const data = A.getData();
+  if (!data.desks.some(d => d.id === deskId)) return;
+  if (data.assignments[deskId] === studentId) return;
   if (data.lockedDesks[deskId]) { toast('Aquest pupitre està fixat', 'error'); return; }
-  saveWithUndo();
+  const origin = Object.keys(data.assignments).find(k => data.assignments[k] === studentId);
+  if (origin && data.lockedDesks[origin]) { toast(`${A.studentName(studentId)} està fixat al seu pupitre`, 'error'); return; }
+
+  A.saveWithUndo();
   const occupant = data.assignments[deskId];
-  const origin = Object.keys(data.assignments).find(k => data.assignments[k] === draggedStudentId);
   if (occupant && origin) data.assignments[origin] = occupant;
   else if (origin) { delete data.assignments[origin]; delete data.lockedDesks[origin]; }
-  data.assignments[deskId] = draggedStudentId;
-  saveState();
-  renderDesks();
-  renderStudentList();
-  renderRelationsPanel();
-  updateCounts();
-}
-
-function onDeskClick(deskId) {
-  if (currentCanvasView === 'equips') return;
-  const data = getData();
-  if (data.assignments[deskId]) return;
-  const seated = new Set(Object.values(data.assignments));
-  const available = data.students.filter(s => !seated.has(s.id));
-  if (!available.length) { toast('Tots els alumnes ja tenen lloc', 'info'); return; }
-  openModal(`<h3><span class="mi">person_pin</span> Assignar alumne</h3>
-    <div style="max-height:280px;overflow-y:auto">
-      ${available.map(s => `<div class="student-item" style="cursor:pointer" onclick="assignStudentToDesk('${esc(deskId)}','${esc(s.id)}')">
-        <div class="av" style="background:${esc(s.color)}">${esc(initialOf(s.name))}</div><span class="nm">${esc(s.name)}</span></div>`).join('')}
-    </div>
-    <div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel·lar</button></div>`);
-}
-
-function assignStudentToDesk(deskId, studentId) {
-  const data = getData();
-  saveWithUndo();
-  Object.keys(data.assignments).forEach(k => { if (data.assignments[k] === studentId) { delete data.assignments[k]; delete data.lockedDesks[k]; } });
   data.assignments[deskId] = studentId;
-  saveState();
-  closeModal();
+  A.saveState();
   renderDesks();
-  renderStudentList();
-  renderRelationsPanel();
-  updateCounts();
+  A.renderStudentList();
+  A.renderRelationsPanel();
+  A.updateCounts();
+}
+
+/**
+ * Clic sobre un pupitre de l'aula: si és buit, tria l'alumne que hi seurà; si
+ * està ocupat, permet substituir-lo, intercanviar-lo o treure'l (millora 1.6).
+ */
+function onDeskClick(deskId) {
+  if (A.view.current === 'equips') return;
+  const data = A.getData();
+  const index = data.desks.findIndex(d => d.id === deskId);
+  if (index === -1) return;
+  if (data.lockedDesks[deskId]) { toast('Pupitre fixat: obre el cadenat per canviar-lo', 'info'); return; }
+
+  const occupantId = data.assignments[deskId];
+  const occupant = occupantId ? A.findStudent(occupantId) : null;
+  const seatedIds = new Set(Object.values(data.assignments));
+  const available = data.students.filter(s => !seatedIds.has(s.id));
+  const elsewhere = data.students.filter(s => s.id !== occupantId && seatedIds.has(s.id));
+
+  const row = (student, label) => `<div class="student-item" style="cursor:pointer" data-action="seatStudent" data-did="${esc(deskId)}" data-sid="${esc(student.id)}">
+      <div class="av" style="background:${esc(student.color)}">${esc(initialOf(student.name))}</div>
+      <span class="nm">${esc(student.name)}</span>
+      <span style="font-size:10px;color:var(--text3)">${label}</span>
+    </div>`;
+
+  if (!occupant) {
+    if (!available.length && !elsewhere.length) { toast('No hi ha cap alumne per assignar', 'info'); return; }
+    openModal(`<h3><span class="mi">person_pin</span> Assignar alumne al pupitre ${index + 1}</h3>
+      <div class="modal-list">
+        ${available.map(s => row(s, 'sense lloc')).join('')}
+        ${elsewhere.length ? '<p class="modal-note" style="margin:10px 0 4px">Moure’l des d’un altre pupitre:</p>' : ''}
+        ${elsewhere.map(s => row(s, 'canvia de lloc')).join('')}
+      </div>
+      <div class="modal-footer"><button class="btn" data-action="closeModal">Cancel·lar</button></div>`);
+    return;
+  }
+
+  openModal(`<h3><span class="mi">swap_horiz</span> Pupitre ${index + 1}: ${esc(occupant.name)}</h3>
+    <p class="modal-note">Tria un altre alumne per ocupar aquest lloc. Si l'alumne triat ja seia en un altre pupitre, els dos s'intercanvien.</p>
+    <div class="modal-list">
+      ${available.length ? '<p class="modal-note" style="margin:0 0 4px">Alumnes sense lloc:</p>' : ''}
+      ${available.map(s => row(s, 'substitueix')).join('')}
+      ${elsewhere.length ? '<p class="modal-note" style="margin:10px 0 4px">Intercanviar amb:</p>' : ''}
+      ${elsewhere.map(s => row(s, 'intercanvia')).join('')}
+      ${!available.length && !elsewhere.length ? '<div class="cset-empty">No hi ha cap altre alumne</div>' : ''}
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn btn-danger" data-action="unseat" data-did="${esc(deskId)}"><span class="mi mi-xs">person_remove</span> Treure alumne</button>
+    </div>`);
 }
 
 function unseat(deskId) {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   delete data.assignments[deskId];
   delete data.lockedDesks[deskId];
-  saveState();
+  A.saveState();
+  closeModal();
   renderDesks();
-  renderStudentList();
-  renderRelationsPanel();
-  updateCounts();
+  A.renderStudentList();
+  A.renderRelationsPanel();
+  A.updateCounts();
 }
 
 function toggleDeskLock(deskId) {
-  const data = getData();
-  saveWithUndo();
+  const data = A.getData();
+  A.saveWithUndo();
   if (data.lockedDesks[deskId]) delete data.lockedDesks[deskId];
   else data.lockedDesks[deskId] = true;
-  saveState();
+  A.saveState();
   renderDesks();
+  A.renderRelationsPanel();
 }
 
 /** Buida els seients; els pupitres fixats es mantenen. */
 function clearAllSeats() {
-  const data = getData();
+  const data = A.getData();
   const lockedCount = Object.keys(data.lockedDesks).filter(k => data.assignments[k]).length;
   const detail = lockedCount
     ? `${pluralize(lockedCount, 'alumne')} ${lockedCount === 1 ? 'fixat es mantindrà' : 'fixats es mantindran'} al seu lloc.`
     : 'Tots els alumnes es desassignaran dels pupitres.';
   appConfirm('Buidar els seients?', detail, () => {
-    saveWithUndo();
+    A.saveWithUndo();
     Object.keys(data.assignments).forEach(deskId => {
       if (!data.lockedDesks[deskId]) delete data.assignments[deskId];
     });
-    saveState();
+    A.saveState();
     renderDesks();
-    renderStudentList();
-    renderRelationsPanel();
-    updateCounts();
+    A.renderStudentList();
+    A.renderRelationsPanel();
+    A.updateCounts();
   });
-}
-
-/* ── Moviment de pupitres ────────────────────────────── */
-
-function onDeskMoveStart(event, deskId) {
-  startTableMove(event, deskId);
 }
 
 /* ── Taula del professorat ───────────────────────────── */
 
 function toggleTeacherPosition() {
-  const data = getData();
+  const data = A.getData();
   data.teacherAtBottom = !data.teacherAtBottom;
-  saveState();
+  A.saveState();
   applyTeacherPosition();
 }
 
 function applyTeacherPosition() {
-  const data = getData();
+  const data = A.getData();
   const classroom = el('classroom');
   const desk = classroom.querySelector('.teacher-desk');
   const button = el('invertTeacherBtn');
@@ -432,3 +492,28 @@ function applyTeacherPosition() {
     button.title = 'Taula del professorat a baix';
   }
 }
+
+A.registerActions({
+  noop: () => {},
+  selectLayout: node => selectLayout(node.dataset.value),
+  applyCustomLayout: () => applyCustomLayout(),
+  updateSpacingLabel: node => { el('spacingValue').textContent = node.value; },
+  addFreeDesk: () => addFreeDesk(),
+  removeDesk: node => removeDeskById(node.dataset.did),
+  removeSelectedDesks: () => removeSelectedDesks(),
+  deskClick: node => onDeskClick(node.dataset.did),
+  deskMove: (node, event) => A.startTableMove(event, node.dataset.did),
+  seatStudent: node => { closeModal(); seatStudent(node.dataset.did, node.dataset.sid); },
+  unseat: node => unseat(node.dataset.did),
+  toggleDeskLock: node => toggleDeskLock(node.dataset.did),
+  clearAllSeats: () => clearAllSeats(),
+  toggleTeacherPosition: () => toggleTeacherPosition()
+});
+
+Object.assign(A, {
+  LAYOUTS, renderLayoutOptions, generateDesks, centerDesks, applyCustomLayout, addFreeDesk,
+  removeDeskById, removeDesksByIds, removeSelectedDesks, renderDesks, drawRelationLines,
+  seatStudent, clearAllSeats, applyTeacherPosition, initSeatingDragAndDrop
+});
+
+})(window.AulaMap);

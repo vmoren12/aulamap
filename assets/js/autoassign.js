@@ -5,7 +5,10 @@
  * "separar" amb recuita simulada (simulated annealing) i un refinament final
  * per intercanvis. Els pupitres fixats amb cadenat no es toquen mai.
  */
+(function (A) {
 'use strict';
+
+const { el, toast, pluralize, openModal, closeModal, REL_SEPARATE } = A;
 
 /** Pesos de la funció objectiu (com més alt, més prioritari). */
 const SCORE = {
@@ -20,7 +23,7 @@ const SCORE = {
 const ANNEAL_PASSES = 6;
 
 function showAutoAssign() {
-  const data = getData();
+  const data = A.getData();
   if (!data.students.length) { toast('Afegeix alumnes', 'error'); return; }
   if (!data.desks.length) { toast('Configura la distribució', 'error'); return; }
 
@@ -28,8 +31,8 @@ function showAutoAssign() {
   const lockInfo = lockedCount ? `<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--orange-bg);border:1px solid var(--orange);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px;color:var(--orange)">
       <span class="mi mi-sm">lock</span> ${pluralize(lockedCount, 'alumne')} ${lockedCount === 1 ? 'fixat' : 'fixats'}: no es ${lockedCount === 1 ? 'mourà' : 'mouran'}.</div>` : '';
   const relInfo = data.relations.length
-    ? `<p style="font-size:12px;color:var(--text2);margin-bottom:12px">S'optimitzaran ${pluralize(data.relations.length, 'conjunt', 'conjunts')} de relacions (ajuntar/separar).</p>`
-    : `<p style="font-size:12px;color:var(--text2);margin-bottom:12px">No hi ha relacions definides: els alumnes es repartiran a l'atzar.</p>`;
+    ? `<p class="modal-note">S'optimitzaran ${pluralize(data.relations.length, 'conjunt', 'conjunts')} de relacions (ajuntar/separar).</p>`
+    : `<p class="modal-note">No hi ha relacions definides: els alumnes es repartiran a l'atzar.</p>`;
 
   openModal(`<h3><span class="mi">auto_awesome</span> Assignació automàtica</h3>
     ${relInfo}${lockInfo}
@@ -41,8 +44,8 @@ function showAutoAssign() {
         <option value="50000">Màxim</option>
       </select></div>
     <div class="modal-footer">
-      <button class="btn" onclick="closeModal()">Cancel·lar</button>
-      <button class="btn btn-primary" onclick="runAutoAssign()"><span class="mi mi-xs">rocket_launch</span> Executar</button>
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn btn-primary" data-action="runAutoAssign"><span class="mi mi-xs">rocket_launch</span> Executar</button>
     </div>`);
 }
 
@@ -50,7 +53,7 @@ function runAutoAssign() {
   const iterations = +(el('autoIterations')?.value || 5000);
   closeModal();
 
-  const data = getData();
+  const data = A.getData();
   const desks = data.desks;
   if (!data.students.length || !desks.length) return;
 
@@ -60,7 +63,7 @@ function runAutoAssign() {
   const deskCount = desks.length;
 
   /* Matriu de veïnatge */
-  const graph = buildNeighborGraph(desks);
+  const graph = A.buildNeighborGraph(desks);
   const adjacent = new Uint8Array(deskCount * deskCount);
   desks.forEach((desk, i) => {
     graph.get(desk.id).forEach(otherId => {
@@ -196,7 +199,7 @@ function runAutoAssign() {
   }
 
   /* Escriptura del resultat */
-  saveWithUndo();
+  A.saveWithUndo();
   data.assignments = { ...lockedAssignments };
   for (let slot = 0; slot < slotCount; slot++) {
     const student = bestSlots[slot];
@@ -204,14 +207,14 @@ function runAutoAssign() {
     if (student >= 0 && deskIdx >= 0) data.assignments[desks[deskIdx].id] = data.students[student].id;
   }
   Object.keys(data.lockedDesks).forEach(deskId => { if (!data.assignments[deskId]) delete data.lockedDesks[deskId]; });
-  saveState();
+  A.saveState();
 
-  renderDesks();
-  renderStudentList();
-  renderRelationsPanel();
-  updateCounts();
+  A.renderDesks();
+  A.renderStudentList();
+  A.renderRelationsPanel();
+  A.updateCounts();
 
-  const evaluation = evaluateRelations(data);
+  const evaluation = A.evaluateRelations(data);
   const lockedCount = Object.keys(lockedAssignments).length;
   const unseated = data.students.length - Object.keys(data.assignments).length;
   const parts = [];
@@ -287,3 +290,12 @@ function shuffleArray(array) {
   }
   return array;
 }
+
+A.registerActions({
+  showAutoAssign: () => showAutoAssign(),
+  runAutoAssign: () => runAutoAssign()
+});
+
+Object.assign(A, { showAutoAssign, runAutoAssign, scoreRelation, isConnectedGraph, shuffleArray });
+
+})(window.AulaMap);

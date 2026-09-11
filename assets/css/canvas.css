@@ -11,9 +11,9 @@
 .canvas-area{width:100%;height:100%;overflow:hidden;position:relative;cursor:default;touch-action:none;}
 .canvas-area.panning{cursor:grabbing;}
 .canvas-inner{transform-origin:0 0;position:relative;min-width:2000px;min-height:2000px;
-  background:radial-gradient(circle at 50% 50%,rgba(108,142,239,0.03) 0%,transparent 70%),
-  linear-gradient(rgba(54,59,78,0.2) 1px,transparent 1px),
-  linear-gradient(90deg,rgba(54,59,78,0.2) 1px,transparent 1px);
+  background:radial-gradient(circle at 50% 50%,var(--canvas-glow) 0%,transparent 70%),
+  linear-gradient(var(--grid-line) 1px,transparent 1px),
+  linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
   background-size:100% 100%,40px 40px,40px 40px;}
 
 /* CLASSROOM */
@@ -25,12 +25,13 @@
 /* DESK */
 .desk{position:absolute;width:100px;height:64px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:background 0.12s,border-color 0.12s,box-shadow 0.12s;user-select:none;z-index:2;}
 .desk:hover{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
-.desk.occupied{border-color:var(--accent);background:rgba(108,142,239,0.08);}
+.desk.occupied{border-color:var(--accent);background:var(--accent-glow);}
 .desk.drag-over-desk{border-color:var(--green);background:var(--green-bg);transform:scale(1.04);}
 .desk.moving{z-index:999;box-shadow:0 8px 32px rgba(0,0,0,0.5);cursor:grabbing;}
 .desk .dlbl{font-size:9px;color:var(--text3);position:absolute;top:2px;left:5px;}
 .desk .sname{font-size:11px;font-weight:600;color:var(--text);text-align:center;padding:0 4px;max-width:94px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .desk .dav{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;margin-bottom:1px;}
+.desk.occupied .dav{cursor:grab;}
 .desk.empty .sname{color:var(--text3);font-weight:400;font-style:italic;}
 .desk .rm-btn{position:absolute;top:-7px;right:-7px;width:16px;height:16px;background:var(--red);border:none;border-radius:50%;color:#fff;font-size:9px;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:5;}
 .desk.occupied:hover .rm-btn{display:flex;}
@@ -40,8 +41,10 @@
 .desk:hover .del-desk-btn{display:flex;}
 .desk .lock-btn{position:absolute;bottom:-7px;left:-7px;width:16px;height:16px;background:var(--surface3);border:1px solid var(--border);border-radius:50%;color:var(--text3);font-size:9px;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:5;transition:all 0.12s;padding:0;}
 .desk.occupied:hover .lock-btn{display:flex;}
-.desk.locked .lock-btn{display:flex!important;background:var(--orange);border-color:var(--orange);color:#fff;}
+.desk.locked .lock-btn{display:flex!important;background:var(--orange);border-color:var(--orange);color:var(--on-orange);}
 .desk.locked{border-color:var(--orange);box-shadow:0 0 0 2px var(--orange-bg);}
+.desk.desk-highlight{animation:deskPulse 1.2s ease-out 2;}
+@keyframes deskPulse{0%,100%{box-shadow:0 0 0 0 var(--accent-glow)}50%{box-shadow:0 0 0 12px var(--accent-glow)}}
 
 /* COMPAT VIS */
 #relationSvg{position:absolute;top:0;left:0;pointer-events:none;z-index:1;overflow:visible;}
@@ -69,19 +72,19 @@
 .view-toggle{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
 .view-toggle-btn{padding:5px 12px;font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;border:none;background:none;font-family:var(--font);display:flex;align-items:center;gap:4px;transition:all 0.15s;white-space:nowrap;}
 .view-toggle-btn:hover{color:var(--text2);}
-.view-toggle-btn.active{background:var(--accent);color:#fff;box-shadow:0 0 8px var(--accent-glow);}
-#viewToggleEquips.active{background:var(--orange);color:#000;box-shadow:0 0 8px rgba(251,191,36,0.3);}
-#viewToggleEquips.active:hover{background:#e5a800;}
-.active-team-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;background:var(--orange-bg);color:var(--orange);border:1px solid rgba(251,191,36,0.3);white-space:nowrap;animation:badgeFadeIn 0.2s ease-out;}
+.view-toggle-btn.active{background:var(--accent);color:var(--on-accent);box-shadow:0 0 8px var(--accent-glow);}
+#viewToggleEquips.active{background:var(--orange);color:var(--on-orange);}
+#viewToggleEquips.active:hover{background:var(--orange2);}
+.active-team-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-bg);white-space:nowrap;animation:badgeFadeIn 0.2s ease-out;}
 .active-team-badge .mi{font-size:13px;}
 @keyframes badgeFadeIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
 
 
 /* FLOATING FORM TEAMS BUTTON */
-.fab-teams{position:absolute;bottom:12px;right:12px;z-index:50;padding:8px 16px;border-radius:28px;font-size:13px;font-weight:700;background:var(--orange);border:none;color:#000;cursor:pointer;font-family:var(--font);display:none;align-items:center;gap:5px;box-shadow:0 4px 20px rgba(251,191,36,0.4);animation:fabTeamsPulse 3s ease-in-out infinite;transition:background 0.15s;}
-.fab-teams:hover{background:#e5a800;}
+.fab-teams{position:absolute;bottom:12px;right:12px;z-index:50;padding:8px 16px;border-radius:28px;font-size:13px;font-weight:700;background:var(--orange);border:none;color:var(--on-orange);cursor:pointer;font-family:var(--font);display:none;align-items:center;gap:5px;box-shadow:0 4px 20px rgba(251,191,36,0.35);animation:fabTeamsPulse 3s ease-in-out infinite;transition:background 0.15s;}
+.fab-teams:hover{background:var(--orange2);}
 .fab-teams:disabled{opacity:0.35;cursor:default;pointer-events:none;}
-@keyframes fabTeamsPulse{0%,100%{box-shadow:0 4px 20px rgba(251,191,36,0.4)}50%{box-shadow:0 4px 28px rgba(251,191,36,0.6)}}
+@keyframes fabTeamsPulse{0%,100%{box-shadow:0 4px 20px rgba(251,191,36,0.35)}50%{box-shadow:0 4px 28px rgba(251,191,36,0.55)}}
 
 /* FLOATING AUTO-ASSIGN */
 .fab-auto{position:absolute;bottom:12px;right:12px;z-index:50;padding:8px 16px;border-radius:28px;font-size:13px;font-weight:700;box-shadow:0 4px 20px rgba(108,142,239,0.4);animation:fabPulse 3s ease-in-out infinite;}
@@ -96,10 +99,12 @@
 /* Selecció múltiple i desplaçament amb espai */
 .canvas-area.pan-ready,.canvas-area.pan-ready *{cursor:grab!important;}
 .canvas-area.panning,.canvas-area.panning *{cursor:grabbing!important;}
-.desk.table-selected,.team-table.table-selected{outline:3px solid var(--accent);outline-offset:3px;}
+.desk.table-selected{outline:3px solid var(--accent);outline-offset:3px;}
 .desk.table-selected .mv-btn{display:flex;}
-.selection-marquee{position:absolute;pointer-events:none;border:1px solid var(--accent);background:var(--accent-glow);z-index:1000;}
+.selection-marquee{position:absolute;pointer-events:none;border:2px dashed var(--accent);border-radius:4px;background:var(--accent-glow);z-index:1000;}
 
+
+/* Mode Equips: els mateixos pupitres, amb capçalera per equip */
 .canvas-area:focus{outline:none;}
 .desk-student{display:flex;flex-direction:column;align-items:center;min-width:0;max-width:100%;}
 .teams-mode .desk{border-color:rgba(251,146,60,0.4);}

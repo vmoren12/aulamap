@@ -1,38 +1,46 @@
 /**
  * AulaMap — Esquemes d'equips independents de la distribució de l'aula.
+ *
+ * El llenç és el mateix que el de l'aula, però en mode Equips els pupitres i
+ * els seients surten de `teams.layout`: formar, moure o esborrar equips no
+ * toca mai la distribució del grup classe.
  */
+(function (A) {
 'use strict';
 
+const { el, esc, uid, toast, pluralize, isMobile, DESK_W, DESK_H } = A;
+
 function getTeamLayout() {
-  const teams = getTeams();
+  const teams = A.getTeams();
   if (!teams.layout) teams.layout = { desks: [], assignments: {}, lockedDesks: {}, layoutType: 'free' };
   return teams.layout;
 }
 
+/** Dades del llenç actiu: l'esquema d'equips o la distribució de l'aula. */
 function getCanvasData() {
-  return currentCanvasView === 'equips' ? getTeamLayout() : getData();
+  return A.view.current === 'equips' ? getTeamLayout() : A.getData();
 }
 
 function desksForTeam(index) {
   const data = getTeamLayout();
-  const members = new Set(getTeams().groups?.[index] || []);
+  const members = new Set(A.getTeams().groups?.[index] || []);
   return data.desks.filter(desk => members.has(data.assignments[desk.id]));
 }
 
 function teamIndexForDesk(deskId) {
   const studentId = getTeamLayout().assignments[deskId];
-  return (getTeams().groups || []).findIndex(group => group.includes(studentId));
+  return (A.getTeams().groups || []).findIndex(group => group.includes(studentId));
 }
 
 /** Cada membre té un pupitre a l'esquema, independent del seu seient a l'aula. */
-function seatTeamMembers(studentIds = (getTeams().groups || []).flat()) {
+function seatTeamMembers(studentIds = (A.getTeams().groups || []).flat()) {
   const data = getTeamLayout();
-  const members = new Set((getTeams().groups || []).flat());
+  const members = new Set((A.getTeams().groups || []).flat());
   data.desks = data.desks.filter(desk => members.has(data.assignments[desk.id]));
   const deskIds = new Set(data.desks.map(desk => desk.id));
   Object.keys(data.assignments).forEach(id => { if (!deskIds.has(id)) delete data.assignments[id]; });
   const seated = new Set(data.desks.map(desk => data.assignments[desk.id]).filter(Boolean));
-  const valid = new Set(getData().students.map(student => student.id));
+  const valid = new Set(A.getData().students.map(student => student.id));
   const free = data.desks.filter(desk => !data.assignments[desk.id]);
   studentIds.forEach(studentId => {
     if (seated.has(studentId) || !valid.has(studentId)) return;
@@ -49,7 +57,7 @@ function seatTeamMembers(studentIds = (getTeams().groups || []).flat()) {
 /** Ordena només els pupitres de la formació activa. */
 function arrangeTeamDesks() {
   const data = getTeamLayout();
-  const groups = getTeams().groups || [];
+  const groups = A.getTeams().groups || [];
   if (!groups.length) return;
   seatTeamMembers();
   const columns = isMobile() ? 2 : 3;
@@ -73,22 +81,22 @@ function arrangeTeamDesks() {
     desk.x = 20 + (index % (columns * 2)) * (DESK_W + 20);
     desk.y = rowY + Math.floor(index / (columns * 2)) * (DESK_H + 20);
   });
-  centerDesks(data.desks);
+  A.centerDesks(data.desks);
   data.layoutType = 'free';
 }
 
 function autoArrangeTeamDesks() {
-  if (!getTeams().groups?.length) return;
-  endTableGesture();
-  saveWithUndo();
+  if (!A.getTeams().groups?.length) return;
+  A.endTableGesture();
+  A.saveWithUndo();
   arrangeTeamDesks();
-  clearTableSelection();
-  saveState();
-  renderLayoutOptions();
+  A.clearTableSelection();
+  A.saveState();
+  A.renderLayoutOptions();
   renderTeamsCanvas();
-  renderStudentList();
-  updateCounts();
-  zoomReset();
+  A.renderStudentList();
+  A.updateCounts();
+  A.zoomReset();
 }
 
 /** Canviar de grup mou només el pupitre del membre a un lloc lliure proper. */
@@ -112,14 +120,14 @@ function placeDeskWithTeam(studentId, index, movingIds = []) {
 }
 
 function renderTeamsCanvas() {
-  if (currentCanvasView === 'equips' && !getTeams().layout) {
+  if (A.view.current === 'equips' && !A.getTeams().layout) {
     arrangeTeamDesks();
-    const teams = getTeams();
+    const teams = A.getTeams();
     const saved = teams.saved[teams.activeSaved];
     if (saved && !saved.layout) saved.layout = JSON.parse(JSON.stringify(teams.layout));
-    saveState();
+    A.saveState();
   }
-  renderDesks();
+  A.renderDesks();
   updateActiveTeamBadge();
   updateFabTeamsButton();
 }
@@ -127,14 +135,15 @@ function renderTeamsCanvas() {
 /** Capçaleres sobre els pupitres reals, sense un segon llenç. */
 function renderTeamOverlays() {
   const container = el('desksContainer');
-  container.querySelectorAll('.team-zone').forEach(node => node.remove());
-  el('classroom').classList.toggle('teams-mode', currentCanvasView === 'equips');
+  // isConnected: un camp de nom obert pot reordenar els nodes en perdre el focus.
+  container.querySelectorAll('.team-zone').forEach(node => { if (node.isConnected) node.remove(); });
+  el('classroom').classList.toggle('teams-mode', A.view.current === 'equips');
   const arrange = el('arrangeTeamsBtn');
-  if (arrange) arrange.disabled = !getTeams().groups?.length;
-  if (currentCanvasView !== 'equips') return;
-  const teams = getTeams();
+  if (arrange) arrange.disabled = !A.getTeams().groups?.length;
+  if (A.view.current !== 'equips') return;
+  const teams = A.getTeams();
   const groups = teams.groups || [];
-  const violations = teamViolations(groups);
+  const violations = A.teamViolations(groups);
   const right = Math.max(20, ...getTeamLayout().desks.map(desk => desk.x + DESK_W + 40));
   container.insertAdjacentHTML('beforeend', groups.map((group, index) => {
     const desks = desksForTeam(index);
@@ -143,76 +152,130 @@ function renderTeamOverlays() {
     const locked = !!teams.lockedTeams[index];
     const warning = violations[index].together.length || violations[index].separate.length;
     const missing = group.length - desks.length;
-    return `<div class="team-zone" style="left:${x}px;top:${y}px" data-team-idx="${index}"
-        ondragover="onTeamDragOver(event,${index})" ondragleave="onTeamDragLeave(event)" ondrop="onTeamDrop(event,${index})">
+    return `<div class="team-zone" style="left:${x}px;top:${y}px" data-team-idx="${index}">
       <div class="team-zone-header">
-        <button class="team-mv" title="Moure tots els pupitres de l'equip" onpointerdown="onTeamMoveStart(event,${index})"><span class="mi mi-xs">open_with</span></button>
-        <span class="team-title" title="Doble clic per canviar el nom" ondblclick="startRenameTeam(${index},this)">${esc(teamName(index))}</span>
+        <button class="team-mv" title="Moure tots els pupitres de l'equip" data-action="noop" data-press="teamMove" data-idx="${index}"><span class="mi mi-xs">open_with</span></button>
+        <span class="team-title" title="Doble clic per canviar el nom" data-dblclick="renameTeam" data-idx="${index}">${esc(A.teamName(index))}</span>
         <span class="team-count">${group.length}</span>
-        ${teams.useCompetency ? `<span class="team-mean" title="Nivell mitjà">${groupMean(group).toFixed(2)}</span>` : ''}
+        ${teams.useCompetency ? `<span class="team-mean" title="Nivell mitjà">${A.groupMean(group).toFixed(2)}</span>` : ''}
         ${warning ? '<span class="mi mi-xs" title="Hi ha restriccions incomplertes; consulta el panell">warning</span>' : ''}
         ${missing > 0 ? `<span class="team-count" title="Organitza les taules per donar-los lloc">${missing} sense lloc</span>` : ''}
         <button class="team-lock-btn${locked ? ' locked' : ''}" title="${locked ? 'Desbloquejar equip' : 'Bloquejar equip'}"
-          onclick="toggleTeamLock(${index})"><span class="mi mi-xs">${locked ? 'lock' : 'lock_open'}</span></button>
+          data-action="toggleTeamLock" data-idx="${index}"><span class="mi mi-xs">${locked ? 'lock' : 'lock_open'}</span></button>
       </div>
     </div>`;
   }).join(''));
 }
 
 function onTeamMoveStart(event, index) {
-  if (event.button !== 0 || spaceHeld || tableGesture) return;
+  if (event.button !== 0 || A.flags.spaceHeld || A.isTableGesture()) return;
   const desks = desksForTeam(index);
   if (!desks.length) return;
-  clearTableSelection();
-  desks.forEach(desk => tableSelection.add(desk.id));
-  startTableMove(event, desks[0].id);
+  A.clearTableSelection();
+  desks.forEach(desk => A.tableSelection.add(desk.id));
+  A.startTableMove(event, desks[0].id);
 }
+
+/* ── Arrossegament d'alumnes entre equips ────────────── */
 
 let teamDrag = { studentId: null, studentIds: [] };
 
-function onTeamMemberDragStart(event, studentId, fromIndex) {
-  if (spaceHeld || tableGesture || getTeams().lockedStudents[studentId] !== undefined) { event.preventDefault(); return; }
-  const selected = selectedTeamStudents();
+function isTeamDragging() { return teamDrag.studentId !== null; }
+
+function onTeamMemberDragStart(event, studentId) {
+  if (A.flags.spaceHeld || A.isTableGesture() || A.getTeams().lockedStudents[studentId] !== undefined) {
+    event.preventDefault();
+    return;
+  }
+  const selected = A.selectedTeamStudents();
   const studentIds = selected.includes(studentId) ? selected : [studentId];
-  if (studentIds.some(id => getTeams().lockedStudents[id] !== undefined)) {
+  if (studentIds.some(id => A.getTeams().lockedStudents[id] !== undefined)) {
     event.preventDefault();
     toast('La selecció conté alumnes fixats. Desbloqueja’ls abans de moure-la.', 'error');
     return;
   }
   teamDrag = { studentId, studentIds };
-  event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('text/plain', studentId);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', studentId);
+  }
   event.target.closest('.team-table-member')?.classList.add('tm-dragging');
-  canvasTables().forEach(({ id, node }) => {
+  A.canvasTables().forEach(({ id, node }) => {
     if (studentIds.includes(getTeamLayout().assignments[id])) node.classList.add('drag-source');
   });
 }
 
 function onTeamMemberDragEnd(event) {
-  event.target.closest('.team-table-member')?.classList.remove('tm-dragging');
+  event.target.closest?.('.team-table-member')?.classList.remove('tm-dragging');
   document.querySelectorAll('.drag-source,.drag-over-team')
           .forEach(node => node.classList.remove('drag-source', 'drag-over-team'));
   teamDrag = { studentId: null, studentIds: [] };
 }
 
-function onTeamDragOver(event, toIndex) {
-  if (!teamDrag.studentIds.some(id => !getTeams().groups[toIndex]?.includes(id)) || getTeams().lockedTeams[toIndex]) return;
+function onTeamDragOver(event, toIndex, node) {
+  if (!teamDrag.studentIds.some(id => !A.getTeams().groups[toIndex]?.includes(id)) || A.getTeams().lockedTeams[toIndex]) return;
   event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  event.currentTarget.classList.add('drag-over-team');
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  node.classList.add('drag-over-team');
 }
 
-function onTeamDragLeave(event) {
-  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
-  event.currentTarget.classList.remove('drag-over-team');
+function onTeamDragLeave(event, node) {
+  if (event.relatedTarget && node.contains(event.relatedTarget)) return;
+  node.classList.remove('drag-over-team');
 }
 
-function onTeamDrop(event, toIndex) {
+function onTeamDrop(event, toIndex, node) {
   event.preventDefault();
-  event.currentTarget.classList.remove('drag-over-team');
+  node.classList.remove('drag-over-team');
   const { studentIds } = teamDrag;
   teamDrag = { studentId: null, studentIds: [] };
-  if (moveStudentsToTeam(studentIds, toIndex)) toast(`${pluralize(studentIds.length, 'alumne')} → ${teamName(toIndex)}`, 'success');
+  if (A.moveStudentsToTeam(studentIds, toIndex)) {
+    toast(`${pluralize(studentIds.length, 'alumne')} → ${A.teamName(toIndex)}`, 'success');
+  }
+}
+
+/**
+ * Arrossegament dels alumnes en mode Equips: el nom d'un pupitre es deixa anar
+ * sobre un pupitre de l'equip de destí o sobre la seva capçalera.
+ */
+function initTeamsDragAndDrop() {
+  const targetOf = node => {
+    const zone = node.closest?.('.team-zone');
+    if (zone) return { index: +zone.dataset.teamIdx, node: zone };
+    const desk = node.closest?.('.desk');
+    if (!desk) return null;
+    const index = teamIndexForDesk(desk.dataset.did);
+    return index >= 0 ? { index, node: desk } : null;
+  };
+
+  document.addEventListener('dragstart', event => {
+    const member = event.target.closest?.('.team-table-member');
+    if (!member || A.view.current !== 'equips') return;
+    const studentId = getTeamLayout().assignments[member.closest('.desk')?.dataset.did];
+    if (studentId) onTeamMemberDragStart(event, studentId);
+  });
+
+  document.addEventListener('dragend', event => {
+    if (isTeamDragging() || event.target.closest?.('.team-table-member')) onTeamMemberDragEnd(event);
+  });
+
+  document.addEventListener('dragover', event => {
+    if (!isTeamDragging()) return;
+    const target = targetOf(event.target);
+    if (target) onTeamDragOver(event, target.index, target.node);
+  });
+
+  document.addEventListener('dragleave', event => {
+    if (!isTeamDragging()) return;
+    const target = targetOf(event.target);
+    if (target) onTeamDragLeave(event, target.node);
+  });
+
+  document.addEventListener('drop', event => {
+    if (!isTeamDragging()) return;
+    const target = targetOf(event.target);
+    if (target) onTeamDrop(event, target.index, target.node);
+  });
 }
 
 /* ── Indicadors ──────────────────────────────────────── */
@@ -220,8 +283,8 @@ function onTeamDrop(event, toIndex) {
 function updateActiveTeamBadge() {
   const badge = el('activeTeamBadge');
   if (!badge) return;
-  const teams = getTeams();
-  if (currentCanvasView !== 'equips') { badge.style.display = 'none'; return; }
+  const teams = A.getTeams();
+  if (A.view.current !== 'equips') { badge.style.display = 'none'; return; }
   if (teams.activeSaved !== null && teams.saved[teams.activeSaved]) {
     badge.innerHTML = `<span class="mi mi-xs">bookmark</span> ${esc(teams.saved[teams.activeSaved].name)}`;
     badge.style.display = '';
@@ -237,13 +300,37 @@ function updateActiveTeamBadge() {
 function updateFabTeamsButton() {
   const fab = el('fabTeamsBtn');
   if (!fab) return;
-  if (currentCanvasView !== 'equips') { fab.style.display = 'none'; return; }
-  const valid = teamValidationErrors().length === 0;
+  if (A.view.current !== 'equips') { fab.style.display = 'none'; return; }
+  const valid = A.teamValidationErrors().length === 0;
   fab.style.display = valid ? 'flex' : 'none';
   fab.disabled = !valid;
 }
 
 function createTeamsFromFab() {
-  if (currentCanvasView !== 'equips') switchCanvasView('equips');
-  createTeams();
+  if (A.view.current !== 'equips') A.switchCanvasView('equips');
+  A.createTeams();
 }
+
+A.registerActions({
+  teamMove: (node, event) => onTeamMoveStart(event, +node.dataset.idx),
+  arrangeTeamDesks: () => autoArrangeTeamDesks(),
+  createTeamsFromFab: () => createTeamsFromFab(),
+  moveSelectedTeam: node => {
+    const index = parseInt(node.value, 10);
+    node.value = '';
+    if (Number.isNaN(index)) return;
+    const students = A.selectedTeamStudents();
+    if (A.moveStudentsToTeam(students, index)) {
+      toast(`${pluralize(students.length, 'alumne')} → ${A.teamName(index)}`, 'success');
+    }
+  }
+});
+
+Object.assign(A, {
+  getTeamLayout, getCanvasData, desksForTeam, teamIndexForDesk, seatTeamMembers,
+  arrangeTeamDesks, autoArrangeTeamDesks, placeDeskWithTeam,
+  renderTeamsCanvas, renderTeamOverlays, initTeamsDragAndDrop, isTeamDragging,
+  updateActiveTeamBadge, updateFabTeamsButton, createTeamsFromFab
+});
+
+})(window.AulaMap);

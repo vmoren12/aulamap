@@ -1,8 +1,13 @@
 /**
  * AulaMap — Desar, carregar i exportar
- * Fitxers .json amb la configuració completa i exportació de l'aula a PDF.
+ * Fitxers .json amb la configuració completa, importació i exportació en CSV
+ * i exportació de l'aula a PDF.
  */
+(function (A) {
 'use strict';
+
+const { el, esc, uid, toast, pluralize, openModal, closeModal, focusModalField,
+        DESK_W, DESK_H, REL_TOGETHER, REL_SEPARATE } = A;
 
 /** Descàrrega d'un blob amb neteja de l'URL temporal. */
 function downloadBlob(blob, filename) {
@@ -17,13 +22,13 @@ function downloadBlob(blob, filename) {
 function fileStamp() { return new Date().toISOString().slice(0, 10); }
 
 function saveToFile() {
-  const data = getData();
+  const data = A.getData();
   const payload = {
     app: 'AulaMap',
     version: 5,
     exported: new Date().toISOString(),
-    docent: currentDocentName(),
-    config: currentConfigName(),
+    docent: A.currentDocentName(),
+    config: A.currentConfigName(),
     data
   };
   const name = (data.nivell || data.aula || 'configuracio').replace(/\s+/g, '_');
@@ -42,12 +47,12 @@ function handleFileLoad(event) {
     try {
       const payload = JSON.parse(e.target.result);
       if (!payload?.data?.students) { toast('Format no reconegut', 'error'); return; }
-      pushUndo();
-      const entry = currentDocentEntry();
+      A.pushUndo();
+      const entry = A.currentDocentEntry();
       entry.configurations[entry.currentConfig].data = adoptImportedData(payload);
-      saveState();
-      renderAll();
-      setTimeout(() => zoomReset(), 60);
+      A.saveState();
+      A.renderAll();
+      setTimeout(() => A.zoomReset(), 60);
       toast('Configuració carregada', 'success');
     } catch (error) {
       toast('Error en llegir el fitxer: ' + error.message, 'error');
@@ -59,7 +64,7 @@ function handleFileLoad(event) {
 
 /** Normalitza les dades importades i converteix el format d'equips antic (per nom). */
 function adoptImportedData(payload) {
-  const data = normalizeConfigData(payload.data);
+  const data = A.normalizeConfigData(payload.data);
   const legacy = payload.equips;
   if (legacy) {
     const byName = new Map(data.students.map(s => [s.name.toLowerCase(), s.id]));
@@ -88,10 +93,158 @@ function adoptImportedData(payload) {
   return data;
 }
 
+/* ── CSV (millora 1.7) ───────────────────────────────── */
+
+const CSV_SEP = ';';
+
+/** Escapa un valor per a CSV (cometes dobles si cal). */
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function csvFrom(rows) {
+  return rows.map(row => row.map(csvCell).join(CSV_SEP)).join('\r\n');
+}
+
+/** Descarrega un CSV amb marca d'ordre de bytes perquè Excel el llegeixi bé. */
+function downloadCsv(rows, filename) {
+  downloadBlob(new Blob(['﻿' + csvFrom(rows)], { type: 'text/csv;charset=utf-8' }), filename);
+  toast('CSV exportat', 'success');
+}
+
+/** Parteix una línia de CSV admetent `;`, `,` o tabulador i cometes dobles. */
+function parseCsvLine(line) {
+  const separator = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+  const cells = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (quoted) {
+      if (char === '"' && line[i + 1] === '"') { current += '"'; i++; }
+      else if (char === '"') quoted = false;
+      else current += char;
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === separator) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function showImportCsv() {
+  openModal(`<h3><span class="mi">upload_file</span> Importar alumnat en CSV</h3>
+    <p class="modal-note">Una línia per alumne, amb el format <code>nom;nivell</code>. El nivell (0–10) és opcional
+      i s'utilitza per als equips heterogenis. També s'accepten fitxers separats per comes o tabuladors.</p>
+    <div class="field">
+      <label>Fitxer</label>
+      <input type="file" id="csvInput" accept=".csv,.txt" data-change="csvFileChosen">
+    </div>
+    <div class="field"><label>O enganxa-hi les dades</label>
+      <textarea id="csvText" rows="8" style="resize:vertical" placeholder="Anna Puig;7&#10;Pau Serra;5"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn btn-primary" data-action="importCsv"><span class="mi mi-xs">check</span> Importar</button>
+    </div>`);
+  focusModalField('csvText');
+}
+
+function csvFileChosen(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { const area = el('csvText'); if (area) area.value = e.target.result; };
+  reader.readAsText(file);
+}
+
+/** Afegeix els alumnes d'un text CSV; retorna quants se n'han afegit. */
+function importCsvText(text) {
+  const data = A.getData();
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { toast('No hi ha dades per importar', 'error'); return; }
+
+  const rows = lines.map(parseCsvLine);
+  // Capçalera opcional: es descarta si la primera cel·la no sembla un nom real.
+  if (/^(nom|name|alumne|alumnes|estudiant)$/i.test(rows[0][0] || '')) rows.shift();
+
+  A.saveWithUndo();
+  let added = 0, skipped = 0, levels = 0;
+  rows.forEach(cells => {
+    const name = cells[0];
+    if (!name) return;
+    if (data.students.some(s => s.name.toLowerCase() === name.toLowerCase())) { skipped++; return; }
+    const student = A.makeStudent(name, data.students.length);
+    data.students.push(student);
+    added++;
+    const level = parseFloat(String(cells[1] || '').replace(',', '.'));
+    if (!isNaN(level)) {
+      data.teams.competencies[student.id] = Math.max(0, Math.min(10, level));
+      levels++;
+    }
+  });
+  if (levels) data.teams.useCompetency = true;
+  A.saveState();
+  closeModal();
+  A.renderAll();
+  toast(`${pluralize(added, 'alumne')} ${added === 1 ? 'importat' : 'importats'}${levels ? ` (${levels} amb nivell)` : ''}${skipped ? ` — ${skipped} ja hi eren` : ''}`,
+        added ? 'success' : 'info');
+}
+
+function showExportCsv() {
+  openModal(`<h3><span class="mi">table_view</span> Exportar en CSV</h3>
+    <p class="modal-note">Tria què vols exportar. Els fitxers s'obren directament amb qualsevol full de càlcul.</p>
+    <div class="modal-footer" style="flex-wrap:wrap">
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn" data-action="exportStudentsCsv"><span class="mi mi-xs">people</span> Alumnat</button>
+      <button class="btn" data-action="exportSeatingCsv"><span class="mi mi-xs">grid_view</span> Distribució</button>
+      <button class="btn" data-action="exportTeamsCsv"><span class="mi mi-xs">groups</span> Equips</button>
+    </div>`);
+}
+
+function exportStudentsCsv() {
+  const data = A.getData();
+  if (!data.students.length) { toast('No hi ha alumnes', 'error'); return; }
+  const rows = [['nom', 'nivell']];
+  data.students.forEach(s => rows.push([s.name, A.competencyOf(s.id)]));
+  closeModal();
+  downloadCsv(rows, `aulamap_alumnat_${fileStamp()}.csv`);
+}
+
+function exportSeatingCsv() {
+  const data = A.getData();
+  if (!data.desks.length) { toast('No hi ha pupitres', 'error'); return; }
+  const rows = [['pupitre', 'alumne', 'fixat', 'x', 'y']];
+  data.desks.forEach((desk, index) => {
+    const studentId = data.assignments[desk.id];
+    rows.push([index + 1, studentId ? A.studentName(studentId) : '', data.lockedDesks[desk.id] ? 'sí' : '', desk.x, desk.y]);
+  });
+  const unseated = data.students.filter(s => !Object.values(data.assignments).includes(s.id));
+  unseated.forEach(s => rows.push(['', s.name, '', '', '']));
+  closeModal();
+  downloadCsv(rows, `aulamap_distribucio_${fileStamp()}.csv`);
+}
+
+function exportTeamsCsv() {
+  const teams = A.getTeams();
+  if (!teams.groups?.length) { toast('No hi ha equips formats', 'error'); return; }
+  const rows = [['equip', 'alumne', 'nivell']];
+  teams.groups.forEach((group, index) => {
+    group.forEach(id => rows.push([A.teamName(index), A.studentName(id), A.competencyOf(id)]));
+  });
+  closeModal();
+  downloadCsv(rows, `aulamap_equips_${fileStamp()}.csv`);
+}
+
 /* ── Exportació a PDF ────────────────────────────────── */
 
 async function exportPDF() {
-  const data = getData();
+  const data = A.getData();
   if (!data.desks.length) { toast('No hi ha pupitres', 'error'); return; }
   if (typeof html2canvas === 'undefined' || !window.jspdf) {
     toast('Cal connexió per generar el PDF', 'error');
@@ -110,7 +263,7 @@ async function exportPDF() {
   area.style.width = (width + 72) + 'px';
   const teacherDesk = '<div style="width:180px;height:36px;border:2px solid #999;border-radius:8px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:10px;font-weight:600;color:#666;background:#eee">Taula del professor/a</div>';
   const desksHtml = data.desks.map((desk, index) => {
-    const student = data.assignments[desk.id] ? findStudent(data.assignments[desk.id]) : null;
+    const student = data.assignments[desk.id] ? A.findStudent(data.assignments[desk.id]) : null;
     const locked = !!data.lockedDesks[desk.id] && student;
     const border = student ? (locked ? '#FBBF24' : '#6C8EEF') : '#ccc';
     return `<div style="position:absolute;left:${desk.x - originX}px;top:${desk.y - originY}px;width:100px;height:58px;
@@ -122,7 +275,7 @@ async function exportPDF() {
     </div>`;
   }).join('');
 
-  const subtitle = [data.curs, data.nivell, data.aula, 'Grup: ' + currentDocentName(), currentConfigName()]
+  const subtitle = [data.curs, data.nivell, data.aula, 'Grup: ' + A.currentDocentName(), A.currentConfigName()]
     .filter(Boolean).map(esc).join(' · ');
   area.innerHTML = `
     <div style="font-size:20px;font-weight:700;margin-bottom:3px;text-align:center">${esc(data.centreName || 'AulaMap')}</div>
@@ -154,3 +307,24 @@ async function exportPDF() {
     area.innerHTML = '';
   }
 }
+
+A.registerActions({
+  saveToFile: () => saveToFile(),
+  loadFromFile: () => loadFromFile(),
+  handleFileLoad: (node, event) => handleFileLoad(event),
+  exportPDF: () => exportPDF(),
+  showImportCsv: () => showImportCsv(),
+  csvFileChosen: node => csvFileChosen(node),
+  importCsv: () => importCsvText(el('csvText')?.value || ''),
+  showExportCsv: () => showExportCsv(),
+  exportStudentsCsv: () => exportStudentsCsv(),
+  exportSeatingCsv: () => exportSeatingCsv(),
+  exportTeamsCsv: () => exportTeamsCsv()
+});
+
+Object.assign(A, {
+  downloadBlob, fileStamp, saveToFile, loadFromFile, adoptImportedData,
+  csvFrom, parseCsvLine, importCsvText, exportPDF
+});
+
+})(window.AulaMap);

@@ -1,40 +1,10 @@
-/* AulaMap — Equips de treball (panell i taules del llenç) */
-/* TEAM TABLE ON CANVAS */
-.team-table{position:absolute;background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);padding:0;cursor:pointer;user-select:none;z-index:2;min-width:140px;transition:border-color 0.12s,box-shadow 0.12s;}
-.team-table:hover{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
-.team-table.moving{z-index:999;box-shadow:0 8px 32px rgba(0,0,0,0.5);cursor:grabbing;}
-.team-table-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface3);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;gap:6px;}
-.team-table-header .team-title{font-size:11px;font-weight:700;color:var(--text);}
-.team-title:hover{text-decoration:underline;text-decoration-style:dashed;text-underline-offset:2px;cursor:text;}
+/* AulaMap — Equips de treball: panell lateral i alumnes arrossegables al llenç */
 .eq-team-name{cursor:text;transition:color 0.12s;}
 .eq-team-name:hover{color:var(--accent);text-decoration:underline;text-decoration-style:dashed;text-underline-offset:2px;}
-.team-table-header .team-count{font-size:9px;color:var(--text3);background:var(--surface2);padding:1px 6px;border-radius:8px;}
-.team-table-header .team-mv{cursor:grab;color:var(--text3);display:flex;align-items:center;}
-.team-table-header .team-mv:hover{color:var(--accent);}
-.team-table-members{padding:6px 8px;}
 .team-table-member{display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:11px;border-radius:var(--radius-sm);cursor:grab;transition:opacity 0.12s,background 0.1s;}
 .team-table-member:hover{background:var(--surface3);}
 .team-table-member.tm-dragging{opacity:0.3;cursor:grabbing;}
-.team-table-member .tm-av{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;pointer-events:none;}
-.team-table-member .tm-name{font-weight:500;color:var(--text);pointer-events:none;}
-.team-table-member .tm-comp{font-size:9px;color:var(--text3);font-family:var(--mono);margin-left:auto;pointer-events:none;}
-.team-table.drag-over-team{border-color:var(--green)!important;box-shadow:0 0 0 3px var(--green-bg),0 0 16px rgba(74,222,128,0.15)!important;transform:scale(1.02);transition:transform 0.12s,border-color 0.12s,box-shadow 0.12s;}
-.team-table.drag-source{border-style:dashed!important;opacity:0.7;}
-.team-table-avg{padding:4px 10px 6px;font-size:9px;font-weight:600;color:var(--accent);text-align:center;border-top:1px solid var(--border);background:var(--accent-glow);border-radius:0 0 var(--radius) var(--radius);}
-.team-table.has-warnings{border-color:var(--orange)!important;box-shadow:0 0 0 2px var(--orange-bg)!important;}
-.team-canvas-empty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--text3);font-size:13px;line-height:1.8;}
-.team-canvas-empty .mi{font-size:40px;display:block;margin-bottom:8px;opacity:0.3;}
 
-/* TEAM LOCK STYLES - CANVAS */
-.team-table-header .team-lock-btn{background:none;border:none;color:var(--text3);cursor:pointer;display:flex;align-items:center;padding:2px;border-radius:3px;transition:all 0.12s;line-height:1;}
-.team-table-header .team-lock-btn:hover{color:var(--text);background:rgba(255,255,255,0.1);}
-.team-table-header .team-lock-btn.locked{color:var(--orange);}
-.team-table.team-locked{border-color:var(--orange)!important;box-shadow:0 0 0 2px var(--orange-bg)!important;}
-.team-table.team-locked .team-table-header{background:var(--orange-bg)!important;}
-.team-table-member .tm-lock-btn{background:none;border:none;color:var(--text3);cursor:pointer;display:none;align-items:center;padding:1px;border-radius:3px;transition:all 0.12s;line-height:1;margin-left:auto;flex-shrink:0;}
-.team-table-member:hover .tm-lock-btn{display:flex;}
-.team-table-member .tm-lock-btn:hover{color:var(--text);background:var(--surface3);}
-.team-table-member .tm-lock-btn.locked{display:flex!important;color:var(--orange);}
 .team-table-member.student-locked{background:var(--orange-bg);border-radius:var(--radius-sm);}
 
 /* TEAM LOCK STYLES - SIDEBAR */
@@ -48,7 +18,6 @@
 .eq-group-card .eq-member-lock-btn:hover{color:var(--orange);}
 .eq-group-card .eq-member-lock-btn.locked{display:flex!important;color:var(--orange);}
 .eq-group-card .eq-group-member.student-locked{background:var(--orange-bg);border-radius:var(--radius-sm);}
-
 
 /* ═══════════════════════════════════════ */
 /* EQUIPS PANEL STYLES                    */
@@ -74,7 +43,7 @@
 .equips-remaining{padding:8px 10px;background:var(--orange-bg);border:1px solid rgba(251,191,36,0.3);border-radius:var(--radius-sm);margin-bottom:8px;font-size:11px;color:var(--orange);}
 .equips-remaining-btns{display:flex;gap:4px;margin-top:6px;}
 .equips-remaining-btns .btn{font-size:10px;padding:3px 8px;}
-.equips-remaining-btns .btn.selected-opt{background:var(--accent);border-color:var(--accent);color:#fff;}
+.equips-remaining-btns .btn.selected-opt{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
 .eq-warning{padding:6px 8px;background:var(--red-bg);border:1px solid rgba(248,113,113,0.3);border-radius:var(--radius-sm);font-size:10px;color:var(--red);margin-bottom:8px;line-height:1.5;}
 .eq-results{margin-top:8px;}
 .eq-group-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:8px;transition:all 0.2s;}
