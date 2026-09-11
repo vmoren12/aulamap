@@ -15,6 +15,8 @@ function initApp() {
   A.initSidebarResize();
   A.initKeyboardShortcuts();
 
+  A.el('appVersion').textContent = 'v' + A.APP_VERSION;
+
   // Tancar el modal fent clic al fons.
   A.el('modalOverlay').addEventListener('click', event => {
     if (event.target.id === 'modalOverlay') A.closeModal();

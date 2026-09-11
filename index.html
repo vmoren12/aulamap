@@ -95,10 +95,18 @@
           <div class="field"><label for="numSeated">Assignats</label><input type="number" id="numSeated" value="0" readonly style="opacity:0.5"></div>
         </div>
         <div style="flex:1"></div>
-        <div style="text-align:center;padding:12px 0 4px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);margin-top:12px;">
-          Aplicació desenvolupada per <strong style="color:var(--text2)">Víctor Mariano Moreno de la Torre</strong> amb IA.<br>
-          Llicència <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.ca" target="_blank" rel="noopener" style="color:var(--text2);text-decoration:none;">Creative Commons BY-SA 4.0</a>
-        </div>
+        <footer class="app-footer">
+          <p>© 2026 <strong>Víctor Moreno de la Torre</strong></p>
+          <p class="app-footer-meta">
+            <span>Psicòleg i orientador educatiu</span>
+            <span class="sep">·</span>
+            <span>Codi: <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT</a></span>
+            <span class="sep">·</span>
+            <span>Continguts: <a href="https://creativecommons.org/licenses/by/4.0/deed.ca" target="_blank" rel="noopener">CC BY 4.0</a></span>
+            <span class="sep">·</span>
+            <span id="appVersion"></span>
+          </p>
+        </footer>
       </div>
 
       <!-- ALUMNES -->
@@ -108,7 +116,7 @@
           <button class="btn btn-primary btn-sm" data-action="addStudent" title="Afegir"><span class="mi mi-xs">add</span></button>
         </div>
         <div class="field" style="margin-bottom:6px;flex-shrink:0;">
-          <input type="text" id="studentSearch" placeholder="Cerca..." data-input="renderStudentList" style="font-size:11px;padding:5px 8px">
+          <input type="text" id="studentSearch" placeholder="Cerca..." data-input="renderStudentList">
         </div>
         <div id="studentList" style="flex:1;overflow-y:auto;min-height:0;"></div>
         <div id="studentCount" style="text-align:center;font-size:10px;color:var(--text3);padding:4px 0;flex-shrink:0;"></div>
@@ -269,7 +277,8 @@
           </div>
         </div>
       </div>
-      <button class="btn btn-primary fab-auto" id="autoAssignFab" data-action="showAutoAssign"><span class="mi mi-sm">auto_awesome</span> Auto-assignar</button>
+      <button class="btn btn-primary fab-auto" id="autoAssignFab" data-action="autoAssign"
+              title="Reparteix els alumnes complint el màxim de relacions possibles"><span class="mi mi-sm">auto_awesome</span> Auto-assignar</button>
       <button class="fab-teams" id="fabTeamsBtn" data-action="createTeamsFromFab"><span class="mi mi-sm">groups</span> Formar equips</button>
       <button class="btn btn-icon" id="invertTeacherBtn" data-action="toggleTeacherPosition" title="Taula del professorat a baix"
               style="position:absolute;bottom:12px;left:12px;z-index:50;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow);width:32px;height:32px;">

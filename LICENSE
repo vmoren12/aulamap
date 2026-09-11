@@ -1,22 +1,33 @@
 AulaMap
-Copyright (c) Víctor Mariano Moreno de la Torre
+Copyright (c) 2026 Víctor Moreno de la Torre
 
-Aquesta obra està subjecta a la llicència
-Creative Commons Reconeixement-CompartirIgual 4.0 Internacional (CC BY-SA 4.0).
+El projecte té dues llicències segons el tipus de material:
 
-Sou lliures de:
-  - Compartir: copiar i redistribuir el material en qualsevol mitjà i format.
-  - Adaptar: remesclar, transformar i crear a partir del material per a
-    qualsevol finalitat, fins i tot comercial.
+  - El CODI (HTML, CSS i JavaScript) es distribueix sota la llicència MIT,
+    reproduïda tot seguit.
+  - Els CONTINGUTS (textos, documentació i materials didàctics) es distribueixen
+    sota Creative Commons Reconeixement 4.0 Internacional (CC BY 4.0):
+    https://creativecommons.org/licenses/by/4.0/deed.ca
 
-Amb aquestes condicions:
-  - Reconeixement: cal reconèixer l'autoria de manera apropiada, proporcionar
-    un enllaç a la llicència i indicar si s'han fet canvis.
-  - CompartirIgual: si remescleu, transformeu o creeu a partir del material,
-    heu de difondre les vostres creacions amb la mateixa llicència.
 
-Resum de la llicència:
-  https://creativecommons.org/licenses/by-sa/4.0/deed.ca
+MIT License
 
-Text legal complet:
-  https://creativecommons.org/licenses/by-sa/4.0/legalcode.ca
+Copyright (c) 2026 Víctor Moreno de la Torre
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

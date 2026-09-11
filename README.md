@@ -166,7 +166,8 @@ incompatibles passen a ser conjunts d'**ajuntar** i **separar**, i les dades d'e
 
 ## Crèdits i llicència
 
-Aplicació desenvolupada per **Víctor Mariano Moreno de la Torre** amb IA.
+© 2026 **Víctor Moreno de la Torre** — psicòleg i orientador educatiu.
+Aplicació desenvolupada amb IA.
 
-Distribuïda sota llicència
-[Creative Commons Reconeixement-CompartirIgual 4.0 Internacional (CC BY-SA 4.0)](https://creativecommons.org/licenses/by-sa/4.0/deed.ca).
+- **Codi** (HTML, CSS i JavaScript): [MIT](https://opensource.org/licenses/MIT).
+- **Continguts** (textos, documentació i materials): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ca).

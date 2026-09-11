@@ -23,10 +23,18 @@
 /* FORM */
 .field{margin-bottom:10px;}
 .field label{display:block;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
-.field input,.field select,.field textarea{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font);font-size:12px;outline:none;transition:border-color 0.12s;}
-.field input:focus,.field select:focus{border-color:var(--accent);}
+.field input,.field select,.field textarea,.add-form input{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font);font-size:12px;outline:none;transition:border-color 0.12s;}
+.field input:focus,.field select:focus,.add-form input:focus{border-color:var(--accent);}
 .field-row{display:flex;gap:8px;}
 .field-row .field{flex:1;}
+
+/* PEU DEL PANELL */
+.app-footer{text-align:center;padding:12px 0 4px;margin-top:12px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);line-height:1.7;}
+.app-footer strong{color:var(--text2);font-weight:600;}
+.app-footer-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:0 5px;}
+.app-footer .sep{opacity:0.5;}
+.app-footer a{color:var(--text2);text-decoration:none;}
+.app-footer a:hover{color:var(--accent);text-decoration:underline;}
 
 /* STUDENT LIST */
 .student-item{display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;cursor:grab;transition:all 0.1s;font-size:12px;}
@@ -39,7 +47,7 @@
 .student-seated{opacity:0.45;}
 .student-seated .nm::after{content:' ✓';color:var(--green);font-size:10px;}
 .add-form{display:flex;gap:5px;margin-bottom:8px;}
-.add-form input{flex:1;}
+.add-form input{flex:1;width:auto;min-width:0;}
 
 /* COMPAT */
 .compat-pair{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px;}

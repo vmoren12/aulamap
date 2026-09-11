@@ -8,7 +8,7 @@
 (function (A) {
 'use strict';
 
-const { el, toast, pluralize, openModal, closeModal, REL_SEPARATE } = A;
+const { el, toast, pluralize, REL_SEPARATE } = A;
 
 /** Pesos de la funció objectiu (com més alt, més prioritari). */
 const SCORE = {
@@ -20,42 +20,39 @@ const SCORE = {
   separateApart: 4       // parella correctament separada
 };
 
-const ANNEAL_PASSES = 6;
+const ANNEAL_PASSES = 8;
 
-function showAutoAssign() {
+/**
+ * Esforç de cerca segons la mida del problema: sempre el màxim raonable, de
+ * manera que no cal demanar cap "intensitat" al docent.
+ */
+function optimizationEffort(studentCount, deskCount) {
+  return Math.max(20000, Math.min(90000, studentCount * deskCount * 80));
+}
+
+/**
+ * Punt d'entrada del botó: optimitza directament, sense preguntar res. El
+ * càlcul és síncron, així que primer es deixa pintar l'avís.
+ */
+function autoAssign() {
   const data = A.getData();
   if (!data.students.length) { toast('Afegeix alumnes', 'error'); return; }
   if (!data.desks.length) { toast('Configura la distribució', 'error'); return; }
+  if (A.view.current !== 'aula') A.switchCanvasView('aula');
 
-  const lockedCount = Object.keys(data.lockedDesks).filter(k => data.assignments[k]).length;
-  const lockInfo = lockedCount ? `<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--orange-bg);border:1px solid var(--orange);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px;color:var(--orange)">
-      <span class="mi mi-sm">lock</span> ${pluralize(lockedCount, 'alumne')} ${lockedCount === 1 ? 'fixat' : 'fixats'}: no es ${lockedCount === 1 ? 'mourà' : 'mouran'}.</div>` : '';
-  const relInfo = data.relations.length
-    ? `<p class="modal-note">S'optimitzaran ${pluralize(data.relations.length, 'conjunt', 'conjunts')} de relacions (ajuntar/separar).</p>`
-    : `<p class="modal-note">No hi ha relacions definides: els alumnes es repartiran a l'atzar.</p>`;
-
-  openModal(`<h3><span class="mi">auto_awesome</span> Assignació automàtica</h3>
-    ${relInfo}${lockInfo}
-    <div class="field"><label>Intensitat</label>
-      <select id="autoIterations">
-        <option value="1000">Ràpid</option>
-        <option value="5000" selected>Normal</option>
-        <option value="20000">Intensiu</option>
-        <option value="50000">Màxim</option>
-      </select></div>
-    <div class="modal-footer">
-      <button class="btn" data-action="closeModal">Cancel·lar</button>
-      <button class="btn btn-primary" data-action="runAutoAssign"><span class="mi mi-xs">rocket_launch</span> Executar</button>
-    </div>`);
+  const button = el('autoAssignFab');
+  toast('Optimitzant la distribució...', 'info');
+  if (button) button.disabled = true;
+  setTimeout(() => {
+    try { runAutoAssign(); } finally { if (button) button.disabled = false; }
+  }, 20);
 }
 
 function runAutoAssign() {
-  const iterations = +(el('autoIterations')?.value || 5000);
-  closeModal();
-
   const data = A.getData();
   const desks = data.desks;
   if (!data.students.length || !desks.length) return;
+  const iterations = optimizationEffort(data.students.length, desks.length);
 
   /* Índexs de treball */
   const deskIndex = new Map(desks.map((d, i) => [d.id, i]));
@@ -291,11 +288,8 @@ function shuffleArray(array) {
   return array;
 }
 
-A.registerActions({
-  showAutoAssign: () => showAutoAssign(),
-  runAutoAssign: () => runAutoAssign()
-});
+A.registerActions({ autoAssign: () => autoAssign() });
 
-Object.assign(A, { showAutoAssign, runAutoAssign, scoreRelation, isConnectedGraph, shuffleArray });
+Object.assign(A, { autoAssign, runAutoAssign, optimizationEffort, scoreRelation, isConnectedGraph, shuffleArray });
 
 })(window.AulaMap);
