@@ -2,8 +2,9 @@
 /* MAIN */
 .main-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
 .toolbar{display:flex;align-items:center;gap:5px;padding:7px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;}
-.toolbar-sep{width:1px;height:20px;background:var(--border);margin:0 3px;}
-.toolbar-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;}
+.toolbar-sep{width:1px;height:20px;background:var(--border);margin:0 3px;flex-shrink:0;}
+.toolbar-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;white-space:nowrap;flex-shrink:0;}
+.toolbar .btn{flex-shrink:0;white-space:nowrap;}
 .toolbar [hidden]{display:none!important;}
 #moveSelectedTeam{max-width:190px;padding:5px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit;font-size:11px;}
 
@@ -69,12 +70,6 @@
 .docent-bar .lbl{color:var(--text2);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;}
 
 /* CANVAS VIEW TOGGLE */
-.view-toggle{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
-.view-toggle-btn{padding:5px 12px;font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;border:none;background:none;font-family:var(--font);display:flex;align-items:center;gap:4px;transition:all 0.15s;white-space:nowrap;}
-.view-toggle-btn:hover{color:var(--text2);}
-.view-toggle-btn.active{background:var(--accent);color:var(--on-accent);box-shadow:0 0 8px var(--accent-glow);}
-#viewToggleEquips.active{background:var(--orange);color:var(--on-orange);}
-#viewToggleEquips.active:hover{background:var(--orange2);}
 .active-team-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-bg);white-space:nowrap;animation:badgeFadeIn 0.2s ease-out;}
 .active-team-badge .mi{font-size:13px;}
 @keyframes badgeFadeIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}

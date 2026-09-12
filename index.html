@@ -26,12 +26,20 @@
 <header class="app-header">
   <div class="app-logo">
     <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <rect x="2" y="2" width="28" height="28" rx="6" fill="#6C8EEF" opacity="0.15"/>
-      <rect x="6" y="10" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
-      <rect x="18" y="10" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
-      <rect x="6" y="20" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
-      <rect x="18" y="20" width="8" height="6" rx="1.5" fill="#6C8EEF"/>
-      <rect x="10" y="3" width="12" height="4" rx="1.5" fill="#6C8EEF" opacity="0.5"/>
+      <defs>
+        <linearGradient id="am-tile" gradientUnits="userSpaceOnUse" x1="2" y1="2" x2="30" y2="30">
+          <stop offset="0" stop-color="#7C9BF2"/>
+          <stop offset="1" stop-color="#4059C9"/>
+        </linearGradient>
+        <clipPath id="am-clip"><rect x="2" y="2" width="28" height="28" rx="8"/></clipPath>
+      </defs>
+      <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#am-tile)"/>
+      <g clip-path="url(#am-clip)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="1">
+        <path d="M2 11.5h28M2 20.5h28M11.5 2v28M20.5 2v28"/>
+      </g>
+      <path d="M9.4 22.4V9.6l6.6 7.6 6.6-7.6v12.8" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="16" cy="17.2" r="4.4" fill="url(#am-tile)"/>
+      <circle cx="16" cy="17.2" r="2.7" fill="#FBBF24"/>
     </svg>
     <h1>Aula<span>Map</span></h1>
   </div>
@@ -249,19 +257,14 @@
 
   <main class="main-area">
     <div class="toolbar">
-      <div class="view-toggle">
-        <button class="view-toggle-btn active" id="viewToggleAula" data-action="switchCanvasView" data-value="aula"><span class="mi mi-xs">grid_view</span> <span>Aula</span></button>
-        <button class="view-toggle-btn" id="viewToggleEquips" data-action="switchCanvasView" data-value="equips"><span class="mi mi-xs">groups</span> <span>Equips</span></button>
-      </div>
       <span class="active-team-badge" id="activeTeamBadge" style="display:none"></span>
-      <div class="toolbar-sep" id="toolbarSep0"></div>
-      <span class="toolbar-label" id="toolbarAulaTools">Eines:</span>
-      <button class="btn btn-sm" id="toolbarClearBtn" data-action="clearAllSeats"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
-      <button class="btn btn-sm" id="arrangeTeamsBtn" data-action="arrangeTeamDesks" style="display:none"><span class="mi mi-xs">dashboard</span> Organitzar taules</button>
-      <button class="btn btn-sm btn-danger" id="deleteSelectedBtn" data-action="removeSelectedDesks" title="Eliminar els pupitres seleccionats (Supr). Els alumnes es conserven." hidden><span class="mi mi-xs">delete</span> Eliminar seleccionats</button>
+      <span class="toolbar-label" id="toolbarAulaTools">Eines</span>
+      <button class="btn btn-sm" id="toolbarClearBtn" data-action="clearAllSeats" title="Treure tots els alumnes dels pupitres"><span class="mi mi-xs">clear_all</span> <span class="toolbar-btn-text">Buidar</span></button>
+      <button class="btn btn-sm" id="arrangeTeamsBtn" data-action="arrangeTeamDesks" title="Organitzar les taules dels equips" style="display:none"><span class="mi mi-xs">dashboard</span> <span class="toolbar-btn-text">Organitzar</span></button>
+      <button class="btn btn-sm btn-danger" id="deleteSelectedBtn" data-action="removeSelectedDesks" title="Eliminar els pupitres seleccionats (Supr). Els alumnes es conserven." hidden><span class="mi mi-xs">delete</span> <span class="toolbar-btn-text">Eliminar</span></button>
       <select id="moveSelectedTeam" aria-label="Moure els alumnes seleccionats a un equip" data-change="moveSelectedTeam" hidden></select>
       <div class="toolbar-sep" id="toolbarSep1"></div>
-      <span class="toolbar-label" id="deskCountLabel">Pupitres: 0</span>
+      <span class="toolbar-label" id="deskCountLabel" title="Pupitres al llenç">Pupitres: 0</span>
       <div style="flex:1"></div>
       <div id="toolbarScore"></div>
     </div>

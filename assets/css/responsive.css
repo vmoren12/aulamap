@@ -54,17 +54,21 @@
   .sidebar-close-btn{
     display:flex;
     position:absolute;
-    top:10px;right:10px;
+    top:6px;right:6px;
     z-index:510;
-    width:36px;height:36px;
-    background:var(--surface2);
-    border:1px solid var(--border);
+    width:34px;height:34px;
+    padding:0;
+    background:none;
+    border:none;
     border-radius:50%;
     align-items:center;justify-content:center;
     cursor:pointer;
-    color:var(--text);
-    font-size:20px;
+    color:var(--text3);
+    -webkit-tap-highlight-color:transparent;
+    transition:color 0.15s;
   }
+  .sidebar-close-btn .mi{font-size:20px;}
+  .sidebar-close-btn:active{color:var(--text);}
   .sidebar-tabs{
     padding-top:8px;
     padding-right:46px;
@@ -120,8 +124,9 @@
   .toolbar{padding:5px 8px;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
   .toolbar::-webkit-scrollbar{display:none;}
   .toolbar-sep{margin:0 2px;}
-  .view-toggle-btn{padding:4px 8px;font-size:10px;}
-  .active-team-badge{font-size:9px;padding:2px 6px;}
+  .toolbar .btn-sm{padding:4px 7px;font-size:10px;}
+  .active-team-badge{font-size:9px;padding:2px 6px;max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;}
+  #toolbarAulaTools{display:none;}
 
   /* Canvas adjustments */
   .canvas-wrap{flex:1;}
@@ -199,7 +204,7 @@
   .docent-bar .btn-sm{padding:3px 5px;}
   .sidebar-tab{font-size:8px;padding:10px 3px;}
   .toolbar-label{font-size:9px;}
-  .view-toggle-btn span:last-child{display:none;}
+  .toolbar-btn-text{display:none;}
   .eq-constraint-col + .eq-constraint-col{margin-top:8px;}
   .equips-section > div[style*="display:flex;gap:8px"]{flex-direction:column;}
 }

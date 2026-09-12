@@ -292,7 +292,7 @@ function updateActiveTeamBadge() {
     badge.innerHTML = '<span class="mi mi-xs">groups</span> Equips actius';
     badge.style.display = '';
   } else {
-    badge.innerHTML = '<span class="mi mi-xs">groups</span> Mode de formació d’equips';
+    badge.innerHTML = '<span class="mi mi-xs">groups</span> Mode equips';
     badge.style.display = '';
   }
 }

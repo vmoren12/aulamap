@@ -153,8 +153,6 @@ function switchCanvasView(next) {
   view.current = next;
 
   const isAula = next === 'aula';
-  el('viewToggleAula').classList.toggle('active', isAula);
-  el('viewToggleEquips').classList.toggle('active', !isAula);
   el('classroom').classList.toggle('teams-mode', !isAula);
 
   ['toolbarAulaTools', 'toolbarClearBtn', 'toolbarSep1', 'toolbarScore']
@@ -420,7 +418,6 @@ A.registerActions({
   closeMobileSidebar: () => closeMobileSidebar(),
   toggleHeaderMenu: () => toggleHeaderMenu(),
   toggleTheme: () => { toggleTheme(); closeHeaderMenu(); },
-  switchCanvasView: node => switchCanvasView(node.dataset.value),
   updateInfoField: node => updateInfoField(node.dataset.field, node.value),
   confirmClearAll: () => confirmClearAll(),
   zoomIn: () => zoomIn(),

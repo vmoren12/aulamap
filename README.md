@@ -42,7 +42,7 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 - Files, columnes i espaiat configurables; pupitres moguts a mà, afegits o eliminats.
 - Taula del professorat a dalt o a baix, zoom, enquadrament i desplaçament del llenç.
 - Selecció múltiple a Aula i Equips: arrossega el fons per seleccionar amb un rectangle, o fes Majúscules/Ctrl (Cmd a Mac) + clic per afegir o treure taules. Arrossega una taula seleccionada o el seu control de moviment per moure el conjunt. Esc o un clic al fons desmarca la selecció.
-- **Eliminar seleccionats** o **Supr/Retrocés** elimina tots els pupitres seleccionats en una sola acció de desfer, després de confirmar-ho i dient quants alumnes es queden sense lloc. Els alumnes es conserven. A Equips només elimina la representació; **Organitzar taules** torna a mostrar els membres que falten.
+- **Eliminar seleccionats** o **Supr/Retrocés** elimina tots els pupitres seleccionats en una sola acció de desfer, després de confirmar-ho i dient quants alumnes es queden sense lloc. Els alumnes es conserven. A Equips només elimina la representació; **Organitzar** torna a mostrar els membres que falten.
 - Desplaçament del llenç amb espai sostingut + arrossegament del ratolí; en pantalles tàctils, arrossega el fons amb un dit. Els moviments de taules es poden desfer i refer.
 - Un clic al llenç hi trasllada el focus: l'espai no torna a activar l'últim botó premut.
 - Un pupitre ocupat es pot **reassignar**: substituir l'alumne per un que no tingui lloc,
@@ -60,8 +60,8 @@ informa del percentatge de relacions acomplides.
 - Restriccions pròpies d'**ajuntar** i **separar** (importables del panell Relacions).
 - **Nivell de competència** opcional (0–10) i opció d'**equips heterogenis**.
 - Equips i alumnes bloquejables entre repartiments.
-- El menú **Equips** activa un esquema amb contorns taronja subtils, independent dels pupitres i seients d'Aula. Es comparteix el llenç visual, però formar, carregar o moure equips no modifica la distribució del grup classe.
-- Cada formació desada per a un treball o matèria conserva els membres i la seva distribució pròpia. **Organitzar taules** ordena només la formació activa.
+- La pestanya **Equips** de la barra lateral (o de la navegació inferior en mòbil) activa un esquema amb contorns taronja subtils, independent dels pupitres i seients d'Aula; qualsevol altra pestanya torna a la vista d'aula. Es comparteix el llenç visual, però formar, carregar o moure equips no modifica la distribució del grup classe.
+- Cada formació desada per a un treball o matèria conserva els membres i la seva distribució pròpia. **Organitzar** ordena només la formació activa.
 - Mou els pupitres seleccionats amb el seu control de moviment, o un equip sencer amb el de la capçalera. Per canviar diversos alumnes de grup, selecciona'ls amb rectangle o Majúscules/Ctrl + clic i arrossega un dels noms sobre un pupitre o la capçalera del destí. També pots usar **Moure alumnes a…**. Els cadenats es respecten i tot el trasllat es desfà en una sola acció.
 - Equips desats amb nom i data, exportació a text o CSV i exportació de l'aula a PDF.
 
