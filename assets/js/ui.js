@@ -111,13 +111,16 @@ function switchTab(tab) {
   }
 }
 
+/** La classe al cos deixa surar els botons d'acció per damunt del menú obert. */
 function openMobileSidebar(tab) {
   el('sidebarPanel').classList.add('mobile-open');
+  document.body.classList.add('sidebar-open');
   if (tab) switchTab(tab);
 }
 
 function closeMobileSidebar() {
   el('sidebarPanel').classList.remove('mobile-open');
+  document.body.classList.remove('sidebar-open');
   document.querySelectorAll('.mobile-nav-btn').forEach(node => node.classList.remove('active'));
 }
 

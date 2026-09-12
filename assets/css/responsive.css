@@ -164,6 +164,17 @@
   /* Fab teams on mobile */
   .fab-teams{bottom:60px;right:8px;padding:7px 14px;font-size:12px;border-radius:24px;}
 
+  /* Amb el menú obert, l'acció principal sura damunt del panell i no tapa el text:
+     el contingut reserva la franja inferior on s'asseu el botó. */
+  body.sidebar-open .fab-auto,
+  body.sidebar-open .fab-teams{
+    position:fixed;
+    bottom:calc(14px + var(--safe-bottom));
+    right:12px;
+    z-index:520;
+  }
+  body.sidebar-open .sidebar-content{padding-bottom:calc(74px + var(--safe-bottom));}
+
   /* Modal fullscreen on mobile */
   .modal{
     width:96%;max-width:none;

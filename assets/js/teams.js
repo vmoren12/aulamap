@@ -990,18 +990,33 @@ function exportTeams() {
   }
 }
 
+/**
+ * Text pla sense filets ni requadres: alguns lectors de mòbil els pinten com a
+ * caràcters estranys. L'estructura la marquen els títols, el sagnat i les línies
+ * en blanc, i la marca d'ordre de bytes assegura que els accents es llegeixin bé.
+ */
 function doExportTeams(includeCompetency) {
   const teams = A.getTeams();
   const date = new Date().toLocaleDateString('ca-ES');
-  let text = `Equips de treball — ${date}\n${'═'.repeat(40)}\n\n`;
+  const total = teams.groups.reduce((sum, group) => sum + group.length, 0);
+
+  const lines = [
+    'EQUIPS DE TREBALL',
+    `${date} · ${pluralize(teams.groups.length, 'equip')} · ${pluralize(total, 'alumne')}`
+  ];
   teams.groups.forEach((group, index) => {
-    text += `${teamName(index).toUpperCase()}\n${'─'.repeat(20)}\n`;
-    if (includeCompetency) text += `Nivell mitjà: ${groupMean(group).toFixed(2)}\n`;
-    group.forEach(id => {
-      text += includeCompetency ? `  ${A.studentName(id)} (${competencyOf(id)})\n` : `  ${A.studentName(id)}\n`;
+    const meta = [pluralize(group.length, 'alumne')];
+    if (includeCompetency) meta.push(`nivell mitjà ${groupMean(group).toFixed(2)}`);
+    lines.push('', '', teamName(index).toUpperCase(), meta.join(' · '), '');
+    group.forEach((id, position) => {
+      const name = A.studentName(id);
+      lines.push(`   ${String(position + 1).padStart(2, ' ')}. ` +
+        (includeCompetency ? `${name} (${competencyOf(id)})` : name));
     });
-    text += '\n';
   });
+  lines.push('');
+
+  const text = '﻿' + lines.join('\r\n');
   A.downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `equips_${date.replace(/\//g, '-')}.txt`);
   toast('Equips exportats', 'success');
 }

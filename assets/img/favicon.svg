@@ -7,10 +7,9 @@
     <clipPath id="am-clip"><rect x="2" y="2" width="28" height="28" rx="8"/></clipPath>
   </defs>
   <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#am-tile)"/>
-  <g clip-path="url(#am-clip)" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="1">
-    <path d="M2 11.5h28M2 20.5h28M11.5 2v28M20.5 2v28"/>
+  <g clip-path="url(#am-clip)" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="1">
+    <path d="M2 11h28M2 21h28M11 2v28M21 2v28"/>
   </g>
-  <path d="M9.4 22.4V9.6l6.6 7.6 6.6-7.6v12.8" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="16" cy="17.2" r="4.4" fill="url(#am-tile)"/>
-  <circle cx="16" cy="17.2" r="2.7" fill="#FBBF24"/>
+  <path d="M16 7l8 5-8 5-8-5z" fill="#FBBF24"/>
+  <path d="M8 23V12l8 5 8-5v11" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
