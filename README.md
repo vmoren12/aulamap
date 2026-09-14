@@ -84,6 +84,10 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
 - Proposa el repartiment que **acompleix més preferències**, respectant els conjunts
   d'ajuntar i separar. Es pot **regenerar tantes vegades com calgui** i recuperar la
   millor proposta generada.
+- La proposta es pot **retocar a mà** abans de carregar-la: arrossega un nom cap a un
+  altre equip per moure'l, o a sobre d'un company per intercanviar-los (en pantalla
+  tàctil, toca el nom i després el destí). Els percentatges es refan a cada canvi i la
+  millor versió sempre es pot recuperar.
 - Mostra el **percentatge global**, el de cada equip i el de cada alumne
   (`2/3`, amb color i amb el detall de qui té a prop i qui li falta). Els indicadors es
   queden al panell d'Equips, al llenç i a les exportacions.

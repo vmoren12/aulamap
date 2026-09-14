@@ -258,6 +258,131 @@ test('a second round reuses the stored answers without the sheet', () => {
   assert.equal(helper.data.students.length, 8, 'no es tornen a afegir alumnes');
 });
 
+/** Llegeix les targetes pintades al pas de la proposta. */
+const MEMBER = /data-sid="([^"]+)"[\s\S]*?pref-member-name">([^<]*)<[\s\S]*?pref-chip pref-\w+">([^<]*)</g;
+
+function cards(helper) {
+  const html = helper.node('prefGroups').innerHTML || helper.lastModal();
+  return html.split(/<div class="pref-group(?=["\s])/).slice(1).map(chunk => ({
+    leftover: chunk.startsWith(' pref-group-out'),
+    pct: (/<b>[^<]*<\/b>\s*<span class="pref-chip pref-\w+">([^<]*)</.exec(chunk) || ['', ''])[1],
+    members: [...chunk.matchAll(MEMBER)].map(match => ({ id: match[1], name: match[2], chip: match[3] }))
+  }));
+}
+
+const sizes = list => list.filter(card => !card.leftover).map(card => card.members.length);
+const globalPct = helper => {
+  const html = helper.node('prefSummary').innerHTML || helper.lastModal();
+  return parseInt(/pref-summary-head">[\s\S]*?<b class="pref-\w+">(\d+)%/.exec(html)[1], 10);
+};
+
+/** Deixa la proposta feta, amb dos equips de quatre. */
+function proposeTeams(helper) {
+  openSheet(helper, 'merge');
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+}
+
+test('a student moved between teams updates every percentage on the spot', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const before = cards(helper);
+  assert.deepEqual(sizes(before), [4, 4]);
+
+  const moving = before[1].members[0];
+  helper.run('prefPick', { sid: moving.id });
+  assert.match(helper.node('prefGroups').innerHTML, /pref-picked/, 'el nom triat queda marcat');
+  helper.run('prefDropOn', { team: '0' });
+
+  const after = cards(helper);
+  assert.deepEqual(sizes(after), [5, 3]);
+  assert.equal(after[0].members.some(member => member.id === moving.id), true);
+  assert.equal(after[1].members.some(member => member.id === moving.id), false);
+  assert.doesNotMatch(helper.node('prefGroups').innerHTML, /pref-picked/, 'la selecció es deixa anar');
+  assert.match(helper.node('prefSummary').innerHTML, /retocada a mà/);
+  // Els indicadors es refan: cada xip és el recompte de l'equip on ha quedat.
+  const chips = after[0].members.map(member => member.chip).concat(after[1].members.map(member => member.chip));
+  assert.equal(chips.length, 8);
+  assert.ok(chips.every(chip => /^(\d+\/\d+|—)$/.test(chip)), `xips inesperats: ${chips}`);
+});
+
+test('dropping a name on a classmate swaps the two and keeps the sizes', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const before = cards(helper);
+  const first = before[0].members[0];
+  const second = before[1].members[1];
+
+  helper.run('prefPick', { sid: first.id });
+  helper.run('prefPick', { sid: second.id });
+
+  const after = cards(helper);
+  assert.deepEqual(sizes(after), [4, 4]);
+  assert.equal(after[0].members.some(member => member.id === second.id), true);
+  assert.equal(after[1].members.some(member => member.id === first.id), true);
+});
+
+test('picking the same name twice just lets it go', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const before = cards(helper);
+  helper.run('prefPick', { sid: before[0].members[0].id });
+  helper.run('prefPick', { sid: before[0].members[0].id });
+  assert.doesNotMatch(helper.node('prefGroups').innerHTML, /pref-picked/);
+  assert.deepEqual(sizes(cards(helper)), [4, 4]);
+  assert.doesNotMatch(helper.node('prefSummary').innerHTML, /retocada a mà/, 'no s\'ha canviat res');
+});
+
+test('a hand edit that makes things worse can be undone with the best proposal', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const best = globalPct(helper);
+  const happy = cards(helper)[0].members.find(member => /^[1-9]\//.test(member.chip));
+  assert.ok(happy, 'cal algú amb alguna preferència acomplerta');
+
+  helper.run('prefPick', { sid: happy.id });
+  helper.run('prefDropOn', { team: '-1' });          // fora de tot equip
+  assert.ok(globalPct(helper) < best, 'el percentatge baixa');
+  assert.deepEqual(sizes(cards(helper)), [3, 4]);
+  assert.equal(cards(helper).find(card => card.leftover).members.length, 1);
+  assert.match(helper.node('prefSummary').innerHTML, /La millor proposta arriba al/);
+
+  helper.run('prefRestoreBest');
+  assert.equal(globalPct(helper), best);
+  assert.deepEqual(sizes(cards(helper)), [4, 4]);
+  assert.doesNotMatch(helper.node('prefSummary').innerHTML, /La millor proposta arriba al/);
+});
+
+test('the teams that reach the panel are the ones left on screen', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const moving = cards(helper)[1].members[0];
+  helper.run('prefPick', { sid: moving.id });
+  helper.run('prefDropOn', { team: '0' });
+  const shown = cards(helper);
+
+  helper.run('prefApply');
+  const groups = helper.data.teams.groups;
+  assert.deepEqual(Array.from(groups, group => group.length), [5, 3]);
+  shown.filter(card => !card.leftover).forEach((card, index) => {
+    assert.deepEqual(Array.from(groups[index]), card.members.map(member => member.id));
+  });
+});
+
+test('a student left out of every team stays in the class', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  const out = cards(helper)[0].members[0];
+  helper.run('prefPick', { sid: out.id });
+  helper.run('prefDropOn', { team: '-1' });
+  helper.run('prefApply');
+
+  const groups = helper.data.teams.groups;
+  assert.equal(groups.flat().includes(out.id), false, 'no té equip');
+  assert.equal(helper.data.students.some(student => student.id === out.id), true, 'però continua a la classe');
+  assert.deepEqual(Array.from(groups, group => group.length), [3, 4]);
+});
+
 test('separate sets are honoured over the preferences', () => {
   const helper = setupWizard(CLASS);
   helper.data.teams.constraints.separate.push({ id: 'x', students: ['s0', 's1'] });

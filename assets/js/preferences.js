@@ -685,7 +685,7 @@ function newWizard() {
     rosterMode: 'merge', newConfigName: '', roster: [], prefs: {}, unresolved: [],
     plan: { mode: 'count', count: 4, size: 4, remainder: 'balanced' },
     ranked: true, useConstraints: true,
-    proposal: null, best: null, attempts: 0, fromStored: false
+    proposal: null, best: null, attempts: 0, picked: null, fromStored: false
   };
 }
 
@@ -1108,8 +1108,6 @@ function setPlanValue(value) {
   renderWizard();
 }
 
-/* Pas 5 — proposta */
-
 function generateProposal(newSeed) {
   const total = W.roster.length;
   const plan = planPreferenceSizes(total, W.plan);
@@ -1124,80 +1122,245 @@ function generateProposal(newSeed) {
     constraints: currentConstraints(),
     seed
   });
-  const stats = preferenceStats(result.groups, W.prefs, { leftover: result.leftover });
   W.attempts++;
-  W.proposal = { ...result, stats, seed, attempt: W.attempts };
-  if (!W.best || (stats.pct || 0) > (W.best.stats.pct || 0)) W.best = W.proposal;
+  W.picked = null;
+  W.proposal = rateProposal({ ...result, seed, attempt: W.attempts, edited: false });
+  keepIfBest();
   W.step = 5;
   renderWizard();
 }
 
+/** Còpia independent: la millor proposta no ha de canviar si es retoca a mà. */
+function cloneProposal(proposal) {
+  return {
+    ...proposal,
+    groups: proposal.groups.map(group => group.slice()),
+    leftover: proposal.leftover.slice()
+  };
+}
+
+/** Recompta els indicadors d'una proposta. */
+function rateProposal(proposal) {
+  proposal.stats = preferenceStats(proposal.groups, W.prefs, { leftover: proposal.leftover });
+  return proposal;
+}
+
+function keepIfBest() {
+  const current = W.proposal.stats.pct || 0;
+  if (!W.best || current > (W.best.stats.pct || 0)) W.best = cloneProposal(W.proposal);
+}
+
 function restoreBest() {
   if (!W.best) return;
-  W.proposal = W.best;
-  renderWizard();
+  W.proposal = rateProposal(cloneProposal(W.best));
+  W.picked = null;
+  refreshResult();
 }
 
 function nameOf(id) {
   return W.roster.find(student => student.id === id)?.name || A.studentName(id);
 }
 
-function stepResult() {
-  const { groups, leftover, stats, attempt } = W.proposal;
-  const best = W.best ? (W.best.stats.pct || 0) : 0;
-  const current = stats.pct || 0;
+/* ── Retocs a mà de la proposta ──────────────────────── */
 
-  const memberRow = id => {
-    const entry = stats.perStudent[id];
-    const tone = matchTone(entry.met, entry.total);
-    const detail = [
-      entry.metIds.length ? `Amb: ${entry.metIds.map(nameOf).join(', ')}` : '',
-      entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : ''
-    ].filter(Boolean).join(' · ') || 'Sense preferències indicades';
-    return `<div class="pref-member" title="${esc(detail)}">
+/** Equips de la proposta, amb el calaix de "sense equip" al final. */
+function proposalBuckets() {
+  return [...W.proposal.groups, W.proposal.leftover];
+}
+
+function bucketOf(studentId) {
+  return proposalBuckets().findIndex(list => list.includes(studentId));
+}
+
+/** Després de cada canvi: recompte, millor versió i repintat. */
+function afterEdit() {
+  W.proposal.edited = true;
+  rateProposal(W.proposal);
+  keepIfBest();
+  W.picked = null;
+  refreshResult();
+}
+
+function moveMember(studentId, teamIndex) {
+  const buckets = proposalBuckets();
+  const from = bucketOf(studentId);
+  const to = teamIndex < 0 ? buckets.length - 1 : teamIndex;
+  if (from === -1 || to < 0 || to >= buckets.length || from === to) {
+    W.picked = null;
+    refreshResult();
+    return;
+  }
+  buckets[from].splice(buckets[from].indexOf(studentId), 1);
+  buckets[to].push(studentId);
+  afterEdit();
+}
+
+function swapMembers(first, second) {
+  const buckets = proposalBuckets();
+  const a = bucketOf(first);
+  const b = bucketOf(second);
+  if (a === -1 || b === -1) return;
+  if (a === b) { W.picked = null; refreshResult(); return; }
+  buckets[a][buckets[a].indexOf(first)] = second;
+  buckets[b][buckets[b].indexOf(second)] = first;
+  afterEdit();
+}
+
+/** Primer toc: es tria l'alumne. Segon: intercanvi amb un company o trasllat. */
+function pickMember(studentId) {
+  if (!isResultStep()) return;
+  if (!W.picked || W.picked === studentId) {
+    W.picked = W.picked === studentId ? null : studentId;
+    refreshResult();
+    return;
+  }
+  swapMembers(W.picked, studentId);
+}
+
+function dropOnTeam(teamIndex) {
+  if (!isResultStep() || !W.picked) return;
+  moveMember(W.picked, teamIndex);
+}
+
+/* ── Arrossegament dins de l'assistent ───────────────── */
+
+let dragged = null;
+
+function isResultStep() { return !!W && W.step === 5; }
+
+function clearDragMarks() {
+  document.querySelectorAll('.pref-dragging,.pref-drop-target')
+    .forEach(node => node.classList.remove('pref-dragging', 'pref-drop-target'));
+}
+
+/** L'equip on ha caigut el nom, si el gest ve d'un alumne de la proposta. */
+function dropCard(event) {
+  if (!dragged || !isResultStep()) return null;
+  return event.target.closest?.('.pref-group[data-team]') || null;
+}
+
+function initProposalDragAndDrop() {
+  document.addEventListener('dragstart', event => {
+    const member = event.target.closest?.('.pref-member[data-sid]');
+    if (!member || !isResultStep()) return;
+    dragged = member.dataset.sid;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', dragged);
+    }
+    member.classList.add('pref-dragging');
+  });
+
+  document.addEventListener('dragend', () => { dragged = null; clearDragMarks(); });
+
+  document.addEventListener('dragover', event => {
+    const card = dropCard(event);
+    if (!card) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    if (card.classList.contains('pref-drop-target')) return;
+    clearDragMarks();
+    card.classList.add('pref-drop-target');
+  });
+
+  document.addEventListener('drop', event => {
+    const card = dropCard(event);
+    if (!card) return;
+    event.preventDefault();
+    const moving = dragged;
+    dragged = null;
+    clearDragMarks();
+    const member = event.target.closest?.('.pref-member[data-sid]');
+    // Sobre un company s'intercanvien; sobre la resta de l'equip, s'hi trasllada.
+    if (member && member.dataset.sid !== moving) swapMembers(moving, member.dataset.sid);
+    else moveMember(moving, parseInt(card.dataset.team, 10));
+  });
+}
+
+initProposalDragAndDrop();
+
+/* ── Pas 5 — proposta ────────────────────────────────── */
+
+function memberRowHtml(id, stats) {
+  const entry = stats.perStudent[id];
+  const tone = matchTone(entry.met, entry.total);
+  const detail = [
+    entry.metIds.length ? `Amb: ${entry.metIds.map(nameOf).join(', ')}` : '',
+    entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : ''
+  ].filter(Boolean).join(' · ') || 'Sense preferències indicades';
+  return `<div class="pref-member${W.picked === id ? ' pref-picked' : ''}" draggable="true"
+      data-action="prefPick" data-sid="${esc(id)}" title="${esc(detail)}">
       <span class="pref-member-name">${esc(nameOf(id))}</span>
       <span class="pref-chip pref-${tone}">${entry.total ? `${entry.met}/${entry.total}` : '—'}</span>
     </div>`;
-  };
+}
 
-  const cards = groups.map((group, index) => {
-    const entry = stats.perGroup[index];
-    const tone = entry.pct === null ? 'none' : entry.pct >= 75 ? 'good' : entry.pct >= 40 ? 'medium' : 'bad';
-    return `<div class="pref-group">
-      <div class="pref-group-head">
-        <b>Equip ${index + 1}</b>
-        <span class="pref-chip pref-${tone}">${entry.pct === null ? '—' : entry.pct + '%'}</span>
-      </div>
-      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}</div>
-      ${group.map(memberRow).join('')}
-    </div>`;
-  }).join('');
-
-  const leftoverCard = leftover.length ? `<div class="pref-group pref-group-out">
-      <div class="pref-group-head"><b>Sense equip</b></div>
-      <div class="pref-group-meta">${pluralize(leftover.length, 'alumne')}</div>
-      ${leftover.map(memberRow).join('')}
-    </div>` : '';
-
-  return wizardShell(`
-    <div class="pref-summary pref-summary-big">
+function resultSummaryHtml() {
+  const { stats, attempt, edited } = W.proposal;
+  const best = W.best ? (W.best.stats.pct || 0) : 0;
+  const current = stats.pct || 0;
+  const meta = [
+    `${stats.met} de ${stats.total} tries`,
+    mutualLabel(stats.mutual),
+    stats.unhappy ? `${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta` : 'tothom té algú de la seva llista',
+    `proposta ${attempt}${W.attempts > 1 ? ` de ${W.attempts}` : ''}${edited ? ', retocada a mà' : ''}`
+  ];
+  return `<div class="pref-summary pref-summary-big">
       <div class="pref-summary-head">
         <span>Preferències acomplertes</span>
         <b class="pref-${current >= 75 ? 'good' : current >= 40 ? 'medium' : 'bad'}">${stats.pct === null ? '—' : current + '%'}</b>
       </div>
       ${matchBar(stats.pct)}
-      <div class="pref-summary-meta">
-        ${stats.met} de ${stats.total} tries · ${mutualLabel(stats.mutual)} ·
-        ${stats.unhappy ? `${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta` : 'tothom té algú de la seva llista'} ·
-        proposta ${attempt}${W.attempts > 1 ? ` de ${W.attempts}` : ''}
-      </div>
+      <div class="pref-summary-meta">${meta.join(' · ')}</div>
     </div>
-    ${W.attempts > 1 && current < best
+    ${current < best
       ? `<div class="pref-note pref-note-warn"><span class="mi mi-xs">history</span>
-          <div>La millor proposta generada arriba al <b>${best}%</b>.
+          <div>La millor proposta arriba al <b>${best}%</b>.
           <button class="btn btn-sm" data-action="prefRestoreBest" style="margin-left:6px">Recuperar-la</button></div></div>`
-      : ''}
-    <div class="pref-groups">${cards}${leftoverCard}</div>`,
+      : ''}`;
+}
+
+function resultGroupsHtml() {
+  const { groups, leftover, stats } = W.proposal;
+  const cards = groups.map((group, index) => {
+    const entry = stats.perGroup[index];
+    const tone = entry.pct === null ? 'none' : entry.pct >= 75 ? 'good' : entry.pct >= 40 ? 'medium' : 'bad';
+    return `<div class="pref-group" data-team="${index}" data-action="prefDropOn">
+      <div class="pref-group-head">
+        <b>Equip ${index + 1}</b>
+        <span class="pref-chip pref-${tone}">${entry.pct === null ? '—' : entry.pct + '%'}</span>
+      </div>
+      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}</div>
+      ${group.map(id => memberRowHtml(id, stats)).join('')}
+    </div>`;
+  }).join('');
+
+  return cards + `<div class="pref-group pref-group-out" data-team="-1" data-action="prefDropOn">
+      <div class="pref-group-head"><b>Sense equip</b></div>
+      <div class="pref-group-meta">${leftover.length
+        ? pluralize(leftover.length, 'alumne')
+        : 'Deixa-hi qui no hagi d\'anar a cap equip'}</div>
+      ${leftover.map(id => memberRowHtml(id, stats)).join('')}
+    </div>`;
+}
+
+/** Repinta només els indicadors i les targetes: no es perd el desplaçament. */
+function refreshResult() {
+  const summary = el('prefSummary');
+  const groups = el('prefGroups');
+  if (!summary || !groups) { renderWizard(); return; }
+  summary.innerHTML = resultSummaryHtml();
+  groups.innerHTML = resultGroupsHtml();
+}
+
+function stepResult() {
+  return wizardShell(`
+    <div id="prefSummary">${resultSummaryHtml()}</div>
+    <div class="pref-hint"><span class="mi mi-xs">swap_horiz</span>
+      <div>Arrossega un nom a un altre equip per moure'l, o a sobre d'un company per
+        intercanviar-los. En pantalla tàctil, toca el nom i després el destí.
+        Els percentatges es refan a cada canvi.</div></div>
+    <div class="pref-groups" id="prefGroups">${resultGroupsHtml()}</div>`,
     `<button class="btn" data-action="prefBack" data-step="4"><span class="mi mi-xs">tune</span> Canviar equips</button>
      <button class="btn" data-action="prefGenerateAgain"><span class="mi mi-xs">casino</span> Una altra proposta</button>
      <button class="btn btn-primary" data-action="prefApply"><span class="mi mi-xs">check</span> Carregar als equips</button>`);
@@ -1350,6 +1513,8 @@ A.registerActions({
   prefGenerate: () => generateProposal(),
   prefGenerateAgain: () => generateProposal(),
   prefRestoreBest: () => restoreBest(),
+  prefPick: node => pickMember(node.dataset.sid),
+  prefDropOn: node => dropOnTeam(parseInt(node.dataset.team, 10)),
   prefApply: () => applyProposal()
 });
 
