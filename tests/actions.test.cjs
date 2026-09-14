@@ -18,7 +18,7 @@ function loadNamespace() {
     console, setTimeout: () => {}
   });
   for (const file of ['core', 'state', 'profiles', 'students', 'relations', 'seating',
-                      'autoassign', 'teams', 'teamscanvas', 'exports', 'ui', 'canvasselection']) {
+                      'autoassign', 'teams', 'teamscanvas', 'preferences', 'exports', 'ui', 'canvasselection']) {
     vm.runInContext(readFileSync(path.join(root, `assets/js/${file}.js`), 'utf8'), context);
   }
   return vm.runInContext('window.AulaMap', context);

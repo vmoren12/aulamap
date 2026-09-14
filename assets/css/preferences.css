@@ -1,0 +1,109 @@
+/* AulaMap — Equips per preferències: assistent d'importació i indicadors */
+
+/* L'assistent necessita més amplada que un modal normal. */
+.modal:has(.pref-wizard){max-width:820px;}
+
+/* PASSOS */
+.pref-steps{display:flex;gap:4px;list-style:none;margin:0 0 14px;padding:0;flex-wrap:wrap;}
+.pref-steps li{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.4px;padding:4px 8px;border-radius:20px;background:var(--surface2);border:1px solid transparent;}
+.pref-steps li span{width:16px;height:16px;border-radius:50%;background:var(--surface3);color:var(--text2);
+  display:flex;align-items:center;justify-content:center;font-size:9px;font-family:var(--mono);}
+.pref-steps li.active{color:var(--accent);border-color:var(--accent);background:var(--accent-glow);}
+.pref-steps li.active span{background:var(--accent);color:var(--on-accent);}
+.pref-steps li.done{color:var(--text2);}
+.pref-steps li.done span{background:var(--green-bg);color:var(--green);}
+
+/* AVISOS */
+.pref-note{display:flex;gap:6px;align-items:flex-start;padding:7px 9px;margin-bottom:8px;font-size:11px;line-height:1.5;
+  color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);}
+.pref-note .mi{color:var(--accent);flex-shrink:0;margin-top:1px;}
+.pref-note-warn{background:var(--orange-bg);border-color:rgba(251,191,36,0.3);color:var(--text);}
+.pref-note-warn .mi{color:var(--orange);}
+.pref-note-meta{font-size:10px;color:var(--text3);margin-top:3px;}
+.pref-unresolved{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
+.pref-unresolved span{font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface);border:1px solid var(--border);}
+
+/* CAMPS I PREVISUALITZACIÓ */
+.pref-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:8px;}
+.pref-grid .field{margin-bottom:0;}
+.pref-modes{display:flex;gap:5px;margin-bottom:10px;}
+.pref-modes .btn.selected-opt{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+.pref-preview{margin-top:10px;max-height:190px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm);}
+.pref-preview table{border-collapse:collapse;width:100%;font-size:10px;}
+.pref-preview th,.pref-preview td{padding:4px 7px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;
+  max-width:170px;overflow:hidden;text-overflow:ellipsis;color:var(--text2);}
+.pref-preview th{position:sticky;top:0;background:var(--surface2);color:var(--text3);text-transform:uppercase;
+  letter-spacing:0.3px;font-size:9px;z-index:1;}
+.pref-preview .pref-col-name{color:var(--accent);background:var(--accent-glow);}
+.pref-preview .pref-col-pref{color:var(--green);background:var(--green-bg);}
+
+/* RESUM DE L'ALUMNAT */
+.pref-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;}
+.pref-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px;text-align:center;}
+.pref-card b{display:block;font-family:var(--mono);font-size:19px;font-weight:700;color:var(--text);line-height:1.2;}
+.pref-card span{font-size:10px;color:var(--text3);line-height:1.4;display:block;margin-top:2px;}
+.pref-card.pref-medium{border-color:var(--orange);}
+.pref-card.pref-medium b{color:var(--orange);}
+
+.pref-options{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.pref-option{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all 0.12s;}
+.pref-option:hover{border-color:var(--accent);}
+.pref-option.selected{border-color:var(--accent);background:var(--accent-glow);}
+.pref-option input{width:15px;height:15px;accent-color:var(--accent);margin-top:1px;flex-shrink:0;cursor:pointer;}
+.pref-option b{display:block;font-size:12px;font-weight:600;color:var(--text);}
+.pref-option span{display:block;font-size:10px;color:var(--text3);line-height:1.5;margin-top:2px;}
+
+/* PROPOSTA */
+.pref-summary{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:9px 11px;margin-bottom:10px;}
+.pref-summary-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text2);gap:8px;}
+.pref-summary-head b{font-family:var(--mono);font-size:17px;}
+.pref-summary-big .pref-summary-head b{font-size:24px;}
+.pref-summary-meta{font-size:10px;color:var(--text3);margin-top:5px;line-height:1.5;}
+.pref-bar{height:6px;border-radius:3px;background:var(--surface3);overflow:hidden;margin-top:7px;}
+.pref-bar span{display:block;height:100%;border-radius:3px;transition:width 0.3s;}
+.pref-bar .pref-good{background:var(--green);}
+.pref-bar .pref-medium{background:var(--orange);}
+.pref-bar .pref-bad{background:var(--red);}
+.pref-bar .pref-none{background:var(--text3);}
+
+.pref-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;max-height:44vh;overflow-y:auto;padding-right:2px;}
+.pref-group{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 9px;}
+.pref-group-out{border-style:dashed;}
+.pref-group-head{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.pref-group-head b{font-size:12px;}
+.pref-group-meta{font-size:9px;color:var(--text3);margin:2px 0 6px;}
+.pref-member{display:flex;align-items:center;gap:6px;padding:3px 5px;border-radius:var(--radius-sm);font-size:11px;}
+.pref-member:hover{background:var(--surface3);}
+.pref-member-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* INDICADORS */
+.pref-chip{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;
+  background:var(--surface3);color:var(--text3);flex-shrink:0;cursor:help;line-height:1.4;}
+.pref-chip.pref-good{background:var(--green-bg);color:var(--green);}
+.pref-chip.pref-medium{background:var(--orange-bg);color:var(--orange);}
+.pref-chip.pref-bad{background:var(--red-bg);color:var(--red);}
+.pref-good{color:var(--green);}
+.pref-medium{color:var(--orange);}
+.pref-bad{color:var(--red);}
+.pref-none{color:var(--text3);}
+
+/* SECCIÓ DEL PANELL D'EQUIPS */
+.pref-status{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 9px;margin-bottom:6px;}
+.pref-status-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;font-weight:600;color:var(--text2);}
+.pref-status-head .mi{color:var(--green);}
+.pref-status-head b{font-family:var(--mono);font-size:14px;}
+.pref-status-meta{font-size:9px;color:var(--text3);margin-top:3px;line-height:1.4;}
+.pref-status-actions{display:flex;gap:4px;margin-top:6px;}
+.pref-status-actions .btn:first-child{flex:1;}
+
+/* Al resum lateral d'equips el percentatge global ocupa tota l'amplada. */
+.eq-results .pref-summary{margin-bottom:8px;}
+
+@media (max-width:768px){
+  .pref-steps li{padding:3px 6px;font-size:9px;}
+  .pref-steps li:not(.active) span{display:none;}
+  .pref-groups{grid-template-columns:1fr;max-height:38vh;}
+  .pref-preview{max-height:150px;}
+}

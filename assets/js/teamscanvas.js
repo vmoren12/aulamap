@@ -144,6 +144,7 @@ function renderTeamOverlays() {
   const teams = A.getTeams();
   const groups = teams.groups || [];
   const violations = A.teamViolations(groups);
+  const prefView = A.preferenceTeamView ? A.preferenceTeamView(groups) : null;
   const right = Math.max(20, ...getTeamLayout().desks.map(desk => desk.x + DESK_W + 40));
   container.insertAdjacentHTML('beforeend', groups.map((group, index) => {
     const desks = desksForTeam(index);
@@ -158,6 +159,7 @@ function renderTeamOverlays() {
         <span class="team-title" title="Doble clic per canviar el nom" data-dblclick="renameTeam" data-idx="${index}">${esc(A.teamName(index))}</span>
         <span class="team-count">${group.length}</span>
         ${teams.useCompetency ? `<span class="team-mean" title="Nivell mitjà">${A.groupMean(group).toFixed(2)}</span>` : ''}
+        ${prefView ? prefView.group(index) : ''}
         ${warning ? '<span class="mi mi-xs" title="Hi ha restriccions incomplertes; consulta el panell">warning</span>' : ''}
         ${missing > 0 ? `<span class="team-count" title="Organitza les taules per donar-los lloc">${missing} sense lloc</span>` : ''}
         <button class="team-lock-btn${locked ? ' locked' : ''}" title="${locked ? 'Desbloquejar equip' : 'Bloquejar equip'}"

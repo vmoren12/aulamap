@@ -18,6 +18,7 @@ function defaultTeamsData() {
     useCompetency: false,
     heterogeneous: false,
     competencies: {},             // { studentId: 0..10 }
+    preferences: null,            // { updated, source, ranked, prefs:{ studentId:[studentId] }, unresolved:[] }
     constraints: { together: [], separate: [] }, // [{ id, students:[studentId] }]
     groups: null,                 // [[studentId]]
     teamNames: {},                // { teamIndex: nom }
@@ -72,6 +73,28 @@ function normalizeTeamLayout(layout, validStudents) {
   return result;
 }
 
+/**
+ * Preferències d'alumnat netes: només parelles d'identificadors que existeixen.
+ * Un alumne no es pot triar a ell mateix ni repetir una tria.
+ */
+function normalizePreferences(preferences, validIds) {
+  if (!preferences || typeof preferences !== 'object' || !preferences.prefs) return null;
+  const prefs = {};
+  Object.entries(preferences.prefs).forEach(([studentId, list]) => {
+    if (!validIds.has(studentId) || !Array.isArray(list)) return;
+    const clean = [...new Set(list.filter(id => id !== studentId && validIds.has(id)))];
+    if (clean.length) prefs[studentId] = clean;
+  });
+  if (!Object.keys(prefs).length) return null;
+  return {
+    updated: preferences.updated || '',
+    source: preferences.source || '',
+    ranked: preferences.ranked !== false,
+    prefs,
+    unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : []
+  };
+}
+
 /** Completa una configuració amb els camps que hi puguin faltar. */
 function normalizeConfigData(data) {
   const base = defaultConfigData();
@@ -102,6 +125,7 @@ function normalizeConfigData(data) {
 
   // Descarta referències a alumnes que ja no existeixen.
   const ids = new Set(out.students.map(s => s.id));
+  out.teams.preferences = normalizePreferences(out.teams.preferences, ids);
   out.teams.layout = normalizeTeamLayout(out.teams.layout, new Set((out.teams.groups || []).flat().filter(id => ids.has(id))));
   out.teams.saved.forEach(saved => {
     saved.layout = normalizeTeamLayout(saved.layout, new Set(saved.groups.flat().filter(id => ids.has(id))));
@@ -271,7 +295,7 @@ function updateUndoButtons() {
 A.registerActions({ undo: () => undo(), redo: () => redo() });
 
 Object.assign(A, {
-  defaultTeamsData, defaultConfigData, defaultState, normalizeConfigData, normalizeTeamLayout,
+  defaultTeamsData, defaultConfigData, defaultState, normalizeConfigData, normalizeTeamLayout, normalizePreferences,
   getState, getData, getTeams, saveState, pushUndo, saveWithUndo, undo, redo, undoDepth, updateUndoButtons
 });
 

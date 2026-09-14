@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="assets/css/sidebar.css">
 <link rel="stylesheet" href="assets/css/canvas.css">
 <link rel="stylesheet" href="assets/css/teams.css">
+<link rel="stylesheet" href="assets/css/preferences.css">
 <link rel="stylesheet" href="assets/css/responsive.css">
 </head>
 <body>
@@ -186,6 +187,14 @@
         <div class="panel-hint">Forma equips de treball amb els alumnes registrats. L'esquema d'equips és independent de la distribució de l'aula.</div>
 
         <div class="equips-section">
+          <div class="equips-section-title"><span class="mi mi-xs">diversity_3</span> Preferències de l'alumnat</div>
+          <div id="teamPrefStatus"></div>
+          <button class="btn btn-sm" data-action="startPreferenceWizard" style="width:100%">
+            <span class="mi mi-xs">upload_file</span> Importar full de preferències
+          </button>
+        </div>
+
+        <div class="equips-section">
           <div class="equips-section-title"><span class="mi mi-xs">tune</span> Configuració</div>
           <div class="equips-config-row">
             <div class="field"><label for="teamSize">Alumnes per equip</label>
@@ -316,6 +325,7 @@
 <script src="assets/js/autoassign.js"></script>
 <script src="assets/js/teams.js"></script>
 <script src="assets/js/teamscanvas.js"></script>
+<script src="assets/js/preferences.js"></script>
 <script src="assets/js/exports.js"></script>
 <script src="assets/js/ui.js"></script>
 <script src="assets/js/canvasselection.js"></script>

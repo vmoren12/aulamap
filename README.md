@@ -65,6 +65,34 @@ informa del percentatge de relacions acomplides.
 - Mou els pupitres seleccionats amb el seu control de moviment, o un equip sencer amb el de la capçalera. Per canviar diversos alumnes de grup, selecciona'ls amb rectangle o Majúscules/Ctrl + clic i arrossega un dels noms sobre un pupitre o la capçalera del destí. També pots usar **Moure alumnes a…**. Els cadenats es respecten i tot el trasllat es desfà en una sola acció.
 - Equips desats amb nom i data, exportació a text o CSV i exportació de l'aula a PDF.
 
+### Equips per preferències de l'alumnat (sociograma)
+Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar, i
+**Equips → Importar full de preferències** fa la resta:
+
+- Llegeix el full de respostes en **CSV**, **TSV** o **Excel** (`.xlsx`), o enganxat
+  directament des del full de càlcul. Tolera columnes buides, capçaleres de Google Forms
+  (marca de temps, correu...), respostes incompletes, files sense nom i alumnes que
+  responen dues vegades (es queda la resposta més nova).
+- **Identifica els noms** encara que estiguin escrits a mitges, sense accents, en
+  minúscules o amb els cognoms al davant. El que no es pot identificar amb seguretat
+  s'informa en comptes d'endevinar-ho.
+- Si els alumnes del full **no són els de la classe carregada**, avisa i pregunta què
+  fer: afegir només els nous, substituir la llista, treballar només amb els que
+  coincideixen o obrir una **configuració nova** sense tocar la classe actual.
+- El docent tria **quants equips** vol (o quants alumnes per equip) i **què fer amb els
+  sobrants**: equips desiguals (±1), un equip a part o deixar-los sense equip.
+- Proposa el repartiment que **acompleix més preferències**, respectant els conjunts
+  d'ajuntar i separar. Es pot **regenerar tantes vegades com calgui** i recuperar la
+  millor proposta generada.
+- Mostra el **percentatge global**, el de cada equip i el de cada alumne
+  (`2/3`, amb color i amb el detall de qui té a prop i qui li falta). Els indicadors es
+  queden al panell d'Equips, al llenç i a les exportacions.
+- **Tornar a proposar** repeteix el repartiment amb les respostes ja carregades, sense
+  haver de tornar a importar el full.
+
+A `exemples/preferencies-60-alumnes.csv` hi ha un full de respostes de prova amb 60
+alumnes inventats (amb columnes buides, una resposta repetida i un nom de fora del grup).
+
 ### Interfície
 - **Mode clar i mode fosc** (menú de la capçalera), pensat per projectar sobre paret blanca.
 - Barra lateral redimensionable, navegació inferior en pantalles petites i modals adaptats.
@@ -83,7 +111,8 @@ python -m http.server 8000   # → http://localhost:8000
 ```
 
 Les proves de lògica (veïnatge i relacions, selecció i moviment al llenç, esquemes
-d'equips, accions declarades, CSV i pupitres) es passen amb Node, sense cap dependència:
+d'equips, accions declarades, CSV, pupitres i tot el circuit de les preferències) es
+passen amb Node, sense cap dependència:
 
 ```bash
 node --test tests/
@@ -112,6 +141,7 @@ assets/css/
   sidebar.css               Barra lateral, llistes i conjunts d'alumnes
   canvas.css                Llenç de l'aula, pupitres i controls
   teams.css                 Panell i taules d'equips
+  preferences.css           Assistent de preferències i indicadors d'acompliment
   responsive.css            Navegació mòbil i adaptació a pantalles petites
 assets/js/
   core.js                   Constants, utilitats, modals, selector d'alumnes i registre d'accions
@@ -123,11 +153,13 @@ assets/js/
   autoassign.js             Assignació automàtica optimitzada
   teams.js                  Formació d'equips, restriccions i equips desats
   teamscanvas.js            Esquema d'equips sobre el llenç
+  preferences.js            Full de preferències, repartiment òptim i indicadors
   exports.js                Fitxers .json, CSV i exportació a PDF
   ui.js                     Pestanyes, tema, zoom, desplaçament i repintat global
   canvasselection.js        Selecció múltiple i moviment de pupitres
   app.js                    Arrencada
 tests/                      Proves de lògica (node --test tests/)
+exemples/                   Fulls de respostes de prova
 ```
 
 ### Organització del codi
@@ -154,7 +186,9 @@ state
     ├── desks[], assignments{}, lockedDesks{}
     ├── layoutType, layoutRows, layoutCols, layoutSpacing, teacherAtBottom
     └── teams           mides, competències, restriccions, equips, esquema propi
-                        (`layout`) i equips desats
+                        (`layout`), equips desats i preferències de l'alumnat
+                        (`preferences`: qui ha triat qui, l'origen del full i els
+                        noms que no s'han pogut identificar)
 ```
 
 Les dades de versions anteriors (`aulamap_v4`, `aulamap_equips_v1`) es migren

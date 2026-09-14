@@ -14,7 +14,7 @@ window.AulaMap = window.AulaMap || {};
 
 /* ── Constants ───────────────────────────────────────── */
 
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.2.0';
 
 /** Clau d'emmagatzematge actual i claus heretades (migració automàtica). */
 const STORAGE_KEY = 'aulamap_v5';

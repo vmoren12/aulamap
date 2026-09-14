@@ -45,6 +45,14 @@ function teamIndexOf(studentId) {
 /** Treu un alumne de tota la informació d'equips. */
 function removeStudentFromTeams(teams, studentId) {
   delete teams.competencies[studentId];
+  if (teams.preferences) {
+    delete teams.preferences.prefs[studentId];
+    Object.keys(teams.preferences.prefs).forEach(id => {
+      teams.preferences.prefs[id] = teams.preferences.prefs[id].filter(other => other !== studentId);
+      if (!teams.preferences.prefs[id].length) delete teams.preferences.prefs[id];
+    });
+    if (!Object.keys(teams.preferences.prefs).length) teams.preferences = null;
+  }
   delete teams.lockedStudents[studentId];
   [REL_TOGETHER, REL_SEPARATE].forEach(type => {
     teams.constraints[type].forEach(set => { set.students = set.students.filter(id => id !== studentId); });
@@ -430,6 +438,7 @@ function renderTeamsPanel() {
 
   renderCompetencyTable();
   renderTeamConstraints();
+  if (A.renderPreferencePanel) A.renderPreferencePanel();
 
   const errors = teamValidationErrors();
   const warning = el('teamWarning');
@@ -611,6 +620,8 @@ function copyRelationsToTeams() {
 function renderTeamsSidebar(groups) {
   const teams = A.getTeams();
   const showCompetency = teams.useCompetency;
+  // Indicadors de preferències: nuls mentre no s'hagi importat cap formulari.
+  const prefView = A.preferenceTeamView ? A.preferenceTeamView(groups) : null;
   const violations = teamViolations(groups);
   const lockedTeamCount = Object.keys(teams.lockedTeams).length;
   const lockedStudentCount = Object.keys(teams.lockedStudents).length;
@@ -623,7 +634,7 @@ function renderTeamsSidebar(groups) {
           .filter(Boolean).join(', ')}
       </div>` : '';
 
-  el('teamResults').innerHTML = lockInfo + groups.map((group, index) => {
+  el('teamResults').innerHTML = lockInfo + (prefView ? prefView.summary : '') + groups.map((group, index) => {
     const violation = violations[index];
     const hasWarning = violation.together.length || violation.separate.length;
     const isLocked = !!teams.lockedTeams[index];
@@ -643,6 +654,7 @@ function renderTeamsSidebar(groups) {
         <h4 style="margin-bottom:0">
           <span class="eq-team-name" data-action="renameTeam" data-idx="${index}" title="Clic per canviar el nom">${esc(teamName(index))}</span>
           <span class="eq-group-size">${pluralize(group.length, 'alumne')}</span>
+          ${prefView ? prefView.group(index) : ''}
         </h4>
         <button class="eq-team-lock-btn${isLocked ? ' locked' : ''}" data-action="toggleTeamLock" data-idx="${index}" title="${isLocked ? 'Desbloquejar equip' : 'Bloquejar equip sencer'}">
           <span class="mi mi-xs">${isLocked ? 'lock' : 'lock_open'}</span>${isLocked ? ' Bloquejat' : ' Bloquejar'}
@@ -652,6 +664,7 @@ function renderTeamsSidebar(groups) {
         const studentLocked = teams.lockedStudents[studentId] !== undefined;
         return `<div class="eq-group-member${studentLocked ? ' student-locked' : ''}">
           <span class="eq-member-name">${esc(A.studentName(studentId))}</span>
+          ${prefView ? prefView.member(studentId) : ''}
           ${showCompetency ? `<span class="eq-member-comp">${competencyOf(studentId)}</span>` : ''}
           <button class="eq-member-lock-btn${studentLocked ? ' locked' : ''}" data-action="toggleStudentLock" data-sid="${esc(studentId)}" data-idx="${index}" title="${studentLocked ? 'Desbloquejar alumne' : 'Fixar alumne'}">
             <span class="mi" style="font-size:12px">${studentLocked ? 'lock' : 'lock_open'}</span>
@@ -999,19 +1012,27 @@ function doExportTeams(includeCompetency) {
   const teams = A.getTeams();
   const date = new Date().toLocaleDateString('ca-ES');
   const total = teams.groups.reduce((sum, group) => sum + group.length, 0);
+  const stats = teams.preferences ? A.preferenceStats(teams.groups, teams.preferences.prefs) : null;
 
   const lines = [
     'EQUIPS DE TREBALL',
     `${date} · ${pluralize(teams.groups.length, 'equip')} · ${pluralize(total, 'alumne')}`
   ];
+  if (stats && stats.pct !== null) {
+    lines.push(`Preferències acomplertes: ${stats.pct}% (${stats.met} de ${stats.total})`);
+  }
   teams.groups.forEach((group, index) => {
     const meta = [pluralize(group.length, 'alumne')];
     if (includeCompetency) meta.push(`nivell mitjà ${groupMean(group).toFixed(2)}`);
+    if (stats && stats.perGroup[index].pct !== null) meta.push(`${stats.perGroup[index].pct}% de preferències`);
     lines.push('', '', teamName(index).toUpperCase(), meta.join(' · '), '');
     group.forEach((id, position) => {
       const name = A.studentName(id);
+      const marks = [];
+      if (includeCompetency) marks.push(String(competencyOf(id)));
+      if (stats && stats.perStudent[id]?.total) marks.push(`${stats.perStudent[id].met}/${stats.perStudent[id].total}`);
       lines.push(`   ${String(position + 1).padStart(2, ' ')}. ` +
-        (includeCompetency ? `${name} (${competencyOf(id)})` : name));
+        (marks.length ? `${name} (${marks.join(', ')})` : name));
     });
   });
   lines.push('');
@@ -1071,7 +1092,7 @@ Object.assign(A, {
   teamPlan, unifiedTogetherSets, teamContradictions, teamValidationErrors, buildTeams,
   createTeams, teamViolations, renderTeamsPanel, renderTeamsSidebar, renderSavedTeams,
   moveStudentsToTeam, moveStudentToTeam, startRenameTeam, toggleTeamLock, toggleStudentLock,
-  teamsHaveUnsavedChanges, loadSavedTeam, appendSavedTeam, saveCurrentTeam, deleteSavedTeam,
+  teamsHaveUnsavedChanges, guardUnsavedTeams, loadSavedTeam, appendSavedTeam, saveCurrentTeam, deleteSavedTeam,
   exportTeams, doExportTeams
 });
 

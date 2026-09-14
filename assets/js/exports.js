@@ -138,6 +138,56 @@ function parseCsvLine(line) {
   return cells;
 }
 
+/**
+ * Separador d'un full delimitat: el més freqüent a la primera línia, sense
+ * comptar el que hi hagi dins de cometes.
+ */
+function detectCsvSeparator(text) {
+  const counts = { ';': 0, '\t': 0, ',': 0 };
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') { quoted = !quoted; continue; }
+    if (quoted) continue;
+    if (char === '\n') break;
+    if (counts[char] !== undefined) counts[char]++;
+  }
+  return Object.keys(counts).reduce((best, key) => (counts[key] > counts[best] ? key : best), ';');
+}
+
+/**
+ * Llegeix un full sencer de text delimitat (CSV, TSV o el que exporta un full
+ * de càlcul): detecta el separador, admet cometes dobles amb salts de línia a
+ * dins i descarta les files completament buides.
+ * @returns {string[][]}
+ */
+function parseCsvTable(text) {
+  const clean = String(text || '').replace(/^﻿/, '');
+  if (!clean.trim()) return [];
+  const separator = detectCsvSeparator(clean);
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (quoted) {
+      if (char === '"' && clean[i + 1] === '"') { cell += '"'; i++; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+      continue;
+    }
+    if (char === '"') { quoted = true; continue; }
+    if (char === separator) { row.push(cell.trim()); cell = ''; continue; }
+    if (char === '\r') continue;
+    if (char === '\n') { row.push(cell.trim()); rows.push(row); row = []; cell = ''; continue; }
+    cell += char;
+  }
+  row.push(cell.trim());
+  rows.push(row);
+  return rows.filter(cells => cells.some(value => value !== ''));
+}
+
 function showImportCsv() {
   openModal(`<h3><span class="mi">upload_file</span> Importar alumnat en CSV</h3>
     <p class="modal-note">Una línia per alumne, amb el format <code>nom;nivell</code>. El nivell (0–10) és opcional
@@ -233,9 +283,17 @@ function exportSeatingCsv() {
 function exportTeamsCsv() {
   const teams = A.getTeams();
   if (!teams.groups?.length) { toast('No hi ha equips formats', 'error'); return; }
-  const rows = [['equip', 'alumne', 'nivell']];
+  // Si el grup ve d'un full de preferencies, cada alumne en porta el recompte.
+  const stats = teams.preferences ? A.preferenceStats(teams.groups, teams.preferences.prefs) : null;
+  const rows = [stats
+    ? ['equip', 'alumne', 'nivell', 'preferencies acomplertes', 'preferencies indicades']
+    : ['equip', 'alumne', 'nivell']];
   teams.groups.forEach((group, index) => {
-    group.forEach(id => rows.push([A.teamName(index), A.studentName(id), A.competencyOf(id)]));
+    group.forEach(id => {
+      const row = [A.teamName(index), A.studentName(id), A.competencyOf(id)];
+      if (stats) row.push(stats.perStudent[id]?.met ?? 0, stats.perStudent[id]?.total ?? 0);
+      rows.push(row);
+    });
   });
   closeModal();
   downloadCsv(rows, `aulamap_equips_${fileStamp()}.csv`);
@@ -324,7 +382,7 @@ A.registerActions({
 
 Object.assign(A, {
   downloadBlob, fileStamp, saveToFile, loadFromFile, adoptImportedData,
-  csvFrom, parseCsvLine, importCsvText, exportPDF
+  csvFrom, parseCsvLine, parseCsvTable, detectCsvSeparator, importCsvText, exportPDF
 });
 
 })(window.AulaMap);
