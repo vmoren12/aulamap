@@ -17,6 +17,10 @@ surten mai del dispositiu** (es desen a l'emmagatzematge local del navegador).
 
 ### Perfils i configuracions
 - Diversos **grups** (perfils) independents, cadascun amb les seves **configuracions** d'aula.
+- En crear una **configuració nova** es pot triar d'on surt l'alumnat: començar sense ningú
+  o heretar la llista de qualsevol configuració, del mateix grup o d'un altre. Se'n copien
+  els noms, els nivells de competència i les preferències; la distribució, les relacions i
+  els equips comencen de zero.
 - Desar i carregar la configuració activa en un fitxer `.json`.
 - Desfer i refer (`Ctrl+Z` / `Ctrl+Y`) sobre qualsevol canvi.
 
@@ -93,6 +97,9 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   queden al panell d'Equips, al llenç i a les exportacions.
 - **Tornar a proposar** repeteix el repartiment amb les respostes ja carregades, sense
   haver de tornar a importar el full.
+- L'aplicació recorda la **millor formació carregada** i, si després de fer proves el
+  repartiment d'ara n'acompleix menys, ofereix **recuperar-la** amb un botó que en diu el
+  percentatge. La memòria es manté mentre es treballa amb les mateixes respostes.
 
 A `exemples/preferencies-60-alumnes.csv` hi ha un full de respostes de prova amb 60
 alumnes inventats (amb columnes buides, una resposta repetida i un nom de fora del grup).

@@ -86,12 +86,23 @@ function normalizePreferences(preferences, validIds) {
     if (clean.length) prefs[studentId] = clean;
   });
   if (!Object.keys(prefs).length) return null;
+
+  let best = null;
+  const storedGroups = preferences.best?.groups;
+  if (Array.isArray(storedGroups)) {
+    const groups = storedGroups
+      .map(group => (Array.isArray(group) ? group.filter(id => validIds.has(id)) : []))
+      .filter(group => group.length);
+    if (groups.length) best = { groups, pct: Number(preferences.best.pct) || 0, updated: preferences.best.updated || '' };
+  }
+
   return {
     updated: preferences.updated || '',
     source: preferences.source || '',
     ranked: preferences.ranked !== false,
     prefs,
-    unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : []
+    unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : [],
+    best
   };
 }
 

@@ -51,6 +51,11 @@ function removeStudentFromTeams(teams, studentId) {
       teams.preferences.prefs[id] = teams.preferences.prefs[id].filter(other => other !== studentId);
       if (!teams.preferences.prefs[id].length) delete teams.preferences.prefs[id];
     });
+    const best = teams.preferences.best;
+    if (best) {
+      best.groups = best.groups.map(group => group.filter(id => id !== studentId)).filter(group => group.length);
+      if (!best.groups.length) teams.preferences.best = null;
+    }
     if (!Object.keys(teams.preferences.prefs).length) teams.preferences = null;
   }
   delete teams.lockedStudents[studentId];

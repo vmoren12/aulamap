@@ -629,6 +629,52 @@ function preferenceTeamView(groups) {
 
 /* ── Secció del panell d'equips ──────────────────────── */
 
+/**
+ * Memòria de la millor formació carregada. Mentre el docent fa proves
+ * (repartiments nous, canvis a mà), la versió amb més preferències
+ * acomplertes es guarda per poder-hi tornar.
+ */
+function rememberFormation(teams, stats) {
+  if (!stats || !stats.total || !teams.groups?.length) return;
+  const best = teams.preferences.best;
+  if (best && stats.pct <= best.pct) return;
+  teams.preferences.best = {
+    groups: teams.groups.map(group => group.slice()),
+    pct: stats.pct,
+    updated: formattedNow()
+  };
+  A.saveState();
+}
+
+/** Torna a carregar la millor formació desada. */
+function restoreFormation() {
+  const stored = storedPreferences();
+  if (!stored?.best) return;
+  const write = () => {
+    const teams = A.getTeams();
+    const valid = new Set(A.getData().students.map(student => student.id));
+    const groups = stored.best.groups
+      .map(group => group.filter(id => valid.has(id)))
+      .filter(group => group.length);
+    if (!groups.length) { toast('Aquesta versió ja no té cap alumne de la classe', 'error'); return; }
+    A.saveWithUndo();
+    teams.groups = groups;
+    teams.lockedTeams = {};
+    teams.lockedStudents = {};
+    teams.positions = {};
+    teams.layout = null;
+    teams.activeSaved = null;
+    A.arrangeTeamDesks();
+    A.saveState();
+    if (A.view.current !== 'equips') A.switchCanvasView('equips');
+    A.renderAll();
+    setTimeout(() => A.zoomReset(), 60);
+    toast(`Versió recuperada · ${stored.best.pct}% de preferències`, 'success');
+  };
+  if (A.guardUnsavedTeams) A.guardUnsavedTeams(write);
+  else write();
+}
+
 function renderPreferencePanel() {
   const box = el('teamPrefStatus');
   if (!box) return;
@@ -638,18 +684,27 @@ function renderPreferencePanel() {
       l'aplicació proposarà els equips que acompleixin més preferències.</p>`;
     return;
   }
+  const teams = A.getTeams();
   const answered = Object.keys(stored.prefs).length;
-  const stats = A.getTeams().groups?.length ? preferenceStats(A.getTeams().groups, stored.prefs) : null;
+  const stats = teams.groups?.length ? preferenceStats(teams.groups, stored.prefs) : null;
+  const current = stats && stats.total ? stats.pct : null;
+  rememberFormation(teams, stats);
+
+  const best = stored.best;
+  const canRestore = !!best && (current === null || best.pct > current);
   box.innerHTML = `<div class="pref-status">
       <div class="pref-status-head">
         <span><span class="mi mi-xs">check_circle</span> ${pluralize(answered, 'resposta', 'respostes')} carregades</span>
-        ${stats && stats.pct !== null ? `<b class="pref-${matchTone(stats.met, stats.total)}">${stats.pct}%</b>` : ''}
+        ${current === null ? '' : `<b class="pref-${matchTone(stats.met, stats.total)}">${current}%</b>`}
       </div>
       <div class="pref-status-meta">${esc(stored.source || 'Full de preferències')}${stored.updated ? ` · ${esc(stored.updated)}` : ''}${stored.unresolved?.length ? ` · ${pluralize(stored.unresolved.length, 'nom')} sense identificar` : ''}</div>
       <div class="pref-status-actions">
         <button class="btn btn-sm" data-action="prefRegenerate"><span class="mi mi-xs">auto_awesome</span> Tornar a proposar</button>
         <button class="btn btn-sm btn-danger" data-action="prefForget" title="Esborrar les preferències carregades"><span class="mi mi-xs">delete</span></button>
       </div>
+      ${canRestore ? `<button class="btn btn-sm pref-restore" data-action="prefRestoreFormation"
+        title="${esc(`Equips del ${best.updated} amb el ${best.pct}% de preferències acomplertes`)}">
+        <span class="mi mi-xs">history</span> Recuperar la millor versió (${best.pct}%)</button>` : ''}
     </div>`;
 }
 
@@ -1453,7 +1508,9 @@ function writeProposal() {
     source: W.source || '',
     ranked: W.ranked !== false,
     prefs: JSON.parse(JSON.stringify(W.prefs)),
-    unresolved: W.unresolved.map(item => item.name)
+    unresolved: W.unresolved.map(item => item.name),
+    // En tornar a proposar amb les mateixes respostes, la millor versio es conserva.
+    best: W.fromStored ? (teams.preferences?.best || null) : null
   };
   teams.groups = groups;
   teams.teamNames = {};
@@ -1489,6 +1546,7 @@ A.registerActions({
   startPreferenceWizard: () => startWizard(),
   prefRegenerate: () => startWizard({ fromStored: true }),
   prefForget: () => forgetPreferences(),
+  prefRestoreFormation: () => restoreFormation(),
   prefFileChosen: node => fileChosen(node),
   prefTemplate: () => downloadTemplate(),
   prefReadSource: () => readPastedSource(),
@@ -1523,7 +1581,7 @@ Object.assign(A, {
   looksLikeHeader, autoMapping, columnLabels, emptyColumns, readEntries, matchRoster,
   buildRoster, buildPreferences, planPreferenceSizes, describeSizes,
   preferenceWeights, optimizePreferenceGroups, preferenceStats, matchTone,
-  preferenceTeamView, renderPreferencePanel, startPreferenceWizard: startWizard
+  preferenceTeamView, renderPreferencePanel, restoreFormation, startPreferenceWizard: startWizard
 });
 
 })(window.AulaMap);

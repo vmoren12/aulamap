@@ -106,9 +106,79 @@ function saveEditDocent() {
   toast('Nom actualitzat', 'success');
 }
 
+/* ── Configuracions noves amb alumnat heretat ────────── */
+
+/**
+ * Totes les configuracions de tots els grups, per triar d'on surt l'alumnat.
+ * El valor de cada opció és "índex de grup:índex de configuració".
+ */
+function studentSourceOptions() {
+  const state = A.getState();
+  return state.docents.map((docent, docentIndex) => {
+    const entry = state.configs[docent];
+    const options = entry.configurations.map((cfg, configIndex) => {
+      const current = docentIndex === state.currentDocent && configIndex === entry.currentConfig;
+      return {
+        value: `${docentIndex}:${configIndex}`,
+        label: `${cfg.name} — ${A.pluralize(cfg.data.students.length, 'alumne')}${current ? ' · actual' : ''}`,
+        current,
+        empty: !cfg.data.students.length
+      };
+    });
+    return { docent, options };
+  });
+}
+
+/** Alumnat, nivells i preferències d'una altra configuració. La resta no es copia. */
+function copyStudentsInto(data, source) {
+  if (!source) return 0;
+  const [docentIndex, configIndex] = String(source).split(':').map(Number);
+  const state = A.getState();
+  const origin = state.configs[state.docents[docentIndex]]?.configurations[configIndex]?.data;
+  if (!origin || !origin.students.length) return 0;
+
+  const idMap = new Map();
+  origin.students.forEach((student, index) => {
+    const copy = A.makeStudent(student.name, index, student.color);
+    idMap.set(student.id, copy.id);
+    data.students.push(copy);
+    const level = origin.teams.competencies[student.id];
+    if (typeof level === 'number') data.teams.competencies[copy.id] = level;
+  });
+  data.teams.useCompetency = !!origin.teams.useCompetency && Object.keys(data.teams.competencies).length > 0;
+
+  const preferences = origin.teams.preferences;
+  if (preferences) {
+    const prefs = {};
+    Object.entries(preferences.prefs).forEach(([studentId, list]) => {
+      const owner = idMap.get(studentId);
+      const choices = list.map(id => idMap.get(id)).filter(Boolean);
+      if (owner && choices.length) prefs[owner] = choices;
+    });
+    if (Object.keys(prefs).length) {
+      data.teams.preferences = {
+        updated: preferences.updated, source: preferences.source,
+        ranked: preferences.ranked !== false, prefs, unresolved: [...preferences.unresolved], best: null
+      };
+    }
+  }
+  return data.students.length;
+}
+
 function showAddConfig() {
+  const groups = studentSourceOptions();
+  const optionsHtml = groups.map(group => `<optgroup label="${esc(group.docent)}">${
+    group.options.map(option => `<option value="${esc(option.value)}"${option.current ? ' selected' : ''}${option.empty ? ' disabled' : ''}>${esc(option.label)}</option>`).join('')
+  }</optgroup>`).join('');
   openModal(`<h3><span class="mi">note_add</span> Nova configuració</h3>
     <div class="field"><label>Nom</label><input type="text" id="newConfigName"></div>
+    <div class="field"><label>Alumnat</label>
+      <select id="newConfigStudents">
+        <option value="">Començar sense alumnes</option>
+        ${optionsHtml}
+      </select></div>
+    <p class="modal-note">Se'n copien els noms, els nivells de competència i les preferències.
+      La distribució de l'aula, les relacions i els equips comencen de zero.</p>
     <div class="modal-footer">
       <button class="btn" data-action="closeModal">Cancel·lar</button>
       <button class="btn btn-primary" data-action="addConfig">Crear</button>
@@ -119,14 +189,17 @@ function showAddConfig() {
 function addConfig() {
   const name = el('newConfigName')?.value.trim();
   if (!name) return;
+  const source = el('newConfigStudents')?.value || '';
   A.pushUndo();
   const entry = currentDocentEntry();
-  entry.configurations.push({ name, data: A.defaultConfigData() });
+  const data = A.defaultConfigData();
+  const copied = copyStudentsInto(data, source);
+  entry.configurations.push({ name, data });
   entry.currentConfig = entry.configurations.length - 1;
   A.saveState();
   closeModal();
   A.renderAll();
-  toast(`"${name}" creada`, 'success');
+  toast(`"${name}" creada${copied ? ` amb ${A.pluralize(copied, 'alumne')}` : ''}`, 'success');
 }
 
 function removeConfig() {
@@ -171,7 +244,8 @@ A.registerActions({
 });
 
 Object.assign(A, {
-  currentDocentName, currentDocentEntry, currentConfigName, renderDocentSelect, renderConfigSelect
+  currentDocentName, currentDocentEntry, currentConfigName, renderDocentSelect, renderConfigSelect,
+  studentSourceOptions, copyStudentsInto, addConfig
 });
 
 })(window.AulaMap);

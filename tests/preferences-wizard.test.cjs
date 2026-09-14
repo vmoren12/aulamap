@@ -383,6 +383,68 @@ test('a student left out of every team stays in the class', () => {
   assert.deepEqual(Array.from(groups, group => group.length), [3, 4]);
 });
 
+/* ── Memòria de la millor formació ───────────────────── */
+
+const panelHtml = helper => {
+  helper.A.renderPreferencePanel();
+  return helper.node('teamPrefStatus').innerHTML;
+};
+const panelPct = helper => parseInt(/<b class="pref-\w+">(\d+)%<\/b>/.exec(panelHtml(helper))[1], 10);
+
+test('the best formation is remembered and can be recovered after trying others', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  helper.run('prefApply');
+  const applied = Array.from(helper.data.teams.groups, group => Array.from(group));
+  const best = panelPct(helper);
+  assert.doesNotMatch(panelHtml(helper), /Recuperar la millor/, 'el repartiment d\'ara ja és el millor');
+
+  // El docent continua provant i acaba amb tothom sol: cap preferència acomplerta.
+  helper.data.teams.groups = helper.data.students.map(student => [student.id]);
+  assert.equal(panelPct(helper), 0);
+  assert.match(panelHtml(helper), new RegExp(`Recuperar la millor versió \\(${best}%\\)`));
+
+  helper.run('prefRestoreFormation');
+  assert.deepEqual(Array.from(helper.data.teams.groups, group => Array.from(group)), applied);
+  assert.equal(panelPct(helper), best);
+  assert.doesNotMatch(panelHtml(helper), /Recuperar la millor/, 'ja hi som, no hi ha res a recuperar');
+  assert.equal(helper.calls.guarded > 0, true, 'es pregunta pels equips desats amb canvis');
+});
+
+test('a weaker proposal loaded afterwards does not erase the best one', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  helper.run('prefApply');
+  const best = panelPct(helper);
+  assert.ok(best > 0);
+
+  // Segona volta amb les respostes ja carregades: vuit equips d'un alumne.
+  helper.run('prefRegenerate');
+  helper.run('prefSetPlanValue', {}, { value: '8' });
+  helper.run('prefGenerate');
+  helper.run('prefApply');
+
+  assert.equal(panelPct(helper), 0);
+  assert.match(panelHtml(helper), new RegExp(`Recuperar la millor versió \\(${best}%\\)`));
+  helper.run('prefRestoreFormation');
+  assert.deepEqual(Array.from(helper.data.teams.groups, group => group.length), [4, 4]);
+});
+
+test('importing a different sheet starts the memory from scratch', () => {
+  const helper = setupWizard(CLASS);
+  proposeTeams(helper);
+  helper.run('prefApply');
+  panelHtml(helper);
+  assert.ok(helper.data.teams.preferences.best, 'la primera formació ja es recorda');
+
+  openSheet(helper, 'merge');
+  helper.run('prefSetPlanValue', {}, { value: '8' });
+  helper.run('prefGenerate');
+  helper.run('prefApply');
+  panelHtml(helper);
+  assert.equal(helper.data.teams.preferences.best.pct, 0, 'el full nou porta la seva pròpia memòria');
+});
+
 test('separate sets are honoured over the preferences', () => {
   const helper = setupWizard(CLASS);
   helper.data.teams.constraints.separate.push({ id: 'x', students: ['s0', 's1'] });

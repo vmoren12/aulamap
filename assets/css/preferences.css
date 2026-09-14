@@ -104,6 +104,8 @@
 .pref-status-meta{font-size:9px;color:var(--text3);margin-top:3px;line-height:1.4;}
 .pref-status-actions{display:flex;gap:4px;margin-top:6px;}
 .pref-status-actions .btn:first-child{flex:1;}
+.pref-status .pref-restore{width:100%;margin-top:5px;justify-content:center;border-color:var(--accent);color:var(--accent);}
+.pref-status .pref-restore:hover{background:var(--accent-glow);border-color:var(--accent);}
 
 /* Al resum lateral d'equips el percentatge global ocupa tota l'amplada. */
 .eq-results .pref-summary{margin-bottom:8px;}
