@@ -107,6 +107,7 @@
 .pref-member.pref-picked{border-color:var(--accent);background:var(--accent-glow);}
 .pref-member.pref-dragging{opacity:0.35;}
 .pref-member.pref-member-clash{box-shadow:inset 2px 0 0 var(--red);}
+.pref-member.pref-member-none{box-shadow:inset 2px 0 0 var(--orange);}
 .pref-member-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pref-group.pref-drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow);}
 .pref-hint{display:flex;gap:6px;align-items:flex-start;font-size:10px;color:var(--text3);line-height:1.5;margin:0 0 8px;}

@@ -257,6 +257,61 @@ test('the headline figure follows the chosen criterion', () => {
   assert.equal(spread.alone, 2);
 });
 
+test('nobody who answered is left with no choice at all', () => {
+  const ids = rosterOf(8);
+  const { A } = setup();
+  // Quatre parelles recíproques, cadascuna del mateix sexe i del mateix grup:
+  // separar-les equilibraria molt millor els equips, però deixaria gent a zero.
+  const prefs = { A0: ['A1'], A1: ['A0'], A2: ['A3'], A3: ['A2'],
+                  A4: ['A5'], A5: ['A4'], A6: ['A7'], A7: ['A6'] };
+  const attributes = { sex: {}, group: {} };
+  ids.forEach((id, index) => {
+    attributes.sex[id] = index % 4 < 2 ? 'D' : 'H';
+    attributes.group[id] = index < 4 ? 'Aire' : 'Terra';
+  });
+  const levels = { A0: 10, A1: 9, A2: 8, A3: 7, A4: 3, A5: 2, A6: 1, A7: 0 };
+
+  const result = plain(A.optimizePreferenceGroups({
+    ids, prefs, attributes, levels, sizes: [2, 2, 2, 2], criterion: 'spread', seed: 8
+  }));
+  const stats = plain(A.preferenceStats(result.groups, prefs, { attributes, levels, criterion: 'spread' }));
+  assert.equal(stats.unhappy, 0, 'cap alumne es queda sense la seva tria per equilibrar els equips');
+  assert.deepEqual(stats.unhappyIds, []);
+  assert.equal(stats.alone, 8);
+});
+
+test('when someone has to be left out, it is as few as possible and it is reported', () => {
+  const { A } = setup();
+  // Amb equips de dos i tres alumnes que volen el mateix company, algú s'ha de
+  // quedar sense: el repartiment en deixa un de sol, no dos.
+  const prefs = { A0: ['A1'], A1: ['A0'], A2: ['A0'] };
+  const result = plain(A.optimizePreferenceGroups({
+    ids: ['A0', 'A1', 'A2', 'A3'], prefs, sizes: [2, 2], criterion: 'spread', seed: 4
+  }));
+  const stats = plain(A.preferenceStats(result.groups, prefs, { criterion: 'spread' }));
+  assert.equal(stats.unhappy, 1);
+  assert.deepEqual(stats.unhappyIds, ['A2'], "qui es queda sense queda identificat");
+  assert.equal(stats.alone, 2);
+});
+
+test('a student left with nothing is worse than one with too many', () => {
+  const { A } = setup();
+  const prefs = { A0: ['A1'], A1: ['A0'], A2: ['A0', 'A1'] };
+  // Tots tres junts: l'A2 en té dues d'acomplertes, però ningú es queda sense.
+  const together = plain(A.preferenceStats([['A0', 'A1', 'A2']], prefs, { criterion: 'spread' }));
+  // L'A2 a part: es queda sense ningú de la seva llista.
+  const apart = plain(A.preferenceStats([['A0', 'A1'], ['A2']], prefs, { criterion: 'spread' }));
+  assert.equal(together.unhappy, 0);
+  assert.equal(together.crowded, 1);
+  assert.equal(apart.unhappy, 1);
+
+  const ids = ['A0', 'A1', 'A2'];
+  const result = plain(A.optimizePreferenceGroups({ ids, prefs, sizes: [3], criterion: 'spread', seed: 2 }));
+  assert.equal(result.groups[0].length, 3);
+  const stats = plain(A.preferenceStats(result.groups, prefs, { criterion: 'spread' }));
+  assert.equal(stats.unhappy, 0);
+});
+
 test('separations still beat any criterion', () => {
   const ids = rosterOf(4);
   const { A } = setup();

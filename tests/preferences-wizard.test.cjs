@@ -791,6 +791,53 @@ test('the competency column fills the levels panel and can be rescaled', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(teams.preferences.levelRange)), { min: 0, max: 10 });
 });
 
+test('with one choice each, nobody who answered is left empty-handed', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = SHEET;
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefSetRosterMode', {}, { value: 'merge' });
+  helper.run('prefStudentsNext');
+  helper.run('prefSetCriterion', {}, { value: 'spread' });
+  helper.run('prefSetPlanMode', { value: 'count' });
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+
+  const proposal = helper.lastModal();
+  assert.match(proposal, /0 sense cap/, 'ningú es queda sense la seva tria');
+  assert.doesNotMatch(proposal, /sense cap tria acomplerta<\/b>/, 'i per tant no hi ha cap avís');
+
+  helper.run('prefApply');
+  const stats = helper.A.preferenceStats(helper.data.teams.groups, helper.data.teams.preferences.prefs,
+    helper.A.preferenceStatsOptions(helper.data.teams.preferences));
+  assert.equal(stats.unhappy, 0);
+});
+
+test('when it is impossible, the proposal says who has been left out', () => {
+  const helper = setupWizard(['Anna Puig Solà', 'Pau Serra Vidal', 'Nil Roca Camps', 'Jana Ferrer Mas']);
+  helper.run('startPreferenceWizard');
+  // Tres volen la mateixa persona i els equips són de dos: algú s'hi quedarà.
+  helper.node('prefText').value = [
+    'Nom i cognoms;Preferència 1',
+    'Anna Puig Solà;Pau Serra Vidal',
+    'Pau Serra Vidal;Anna Puig Solà',
+    'Nil Roca Camps;Anna Puig Solà',
+    'Jana Ferrer Mas;'
+  ].join('\r\n');
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+  helper.run('prefSetCriterion', {}, { value: 'spread' });
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+
+  const proposal = helper.lastModal();
+  assert.match(proposal, /1 alumne sense cap tria acomplerta/);
+  assert.match(proposal, /Nil Roca Camps/);
+  assert.match(proposal, /pref-member-none/, "el nom queda marcat a la seva targeta");
+});
+
 test('the side panel shows the achievement of every criterion', () => {
   const helper = setupWizard(CLASS);
   helper.run('startPreferenceWizard');

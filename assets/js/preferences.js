@@ -40,10 +40,19 @@ const BALANCE_QUALITY = 0.25;    // pes de l'equilibri en comparar dues formacio
 // resta prou com per pesar més que una tria de tercera opció.
 const LEVEL_WEIGHT = 3;
 // Criteri "una tria per alumne": la primera preferència acomplerta suma, la
-// segona en descompta una part i la tercera ja fa nosa.
+// segona en descompta una part i la tercera ja fa nosa. Quedar-se sense cap
+// tria, en canvi, no és una alternativa acceptable: costa més que qualsevol
+// desequilibri i només una petició de separació hi pesa més.
 const SPREAD_FIRST = 12;
 const SPREAD_EXTRA = 8;
 const SPREAD_TOP = 2;            // premi si la tria acomplerta és la primera de la llista
+const SPREAD_NONE = 40;          // penalització de l'alumne que es queda sense cap tria
+const PROPOSAL_NONE_COST = 4;    // punts que resta cada alumne sense cap tria acomplerta
+// Amb aquest criteri, una separació ha de continuar pesant més que els dos
+// zeros com a màxim que ajuntar la parella podria estalviar: si no, la manera
+// més barata de donar-los una tria seria posar-los junts, que és justament el
+// que havien demanat d'evitar.
+const AVOID_SPREAD_WEIGHT = 2 * (SPREAD_NONE + SPREAD_FIRST + SPREAD_TOP) + 12;
 const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 /** Capçaleres que solen identificar cada mena de columna. */
@@ -633,8 +642,9 @@ function preferenceWeights(ids, prefs, options = {}) {
 
   // Totes les separacions pesen igual: qui és el primer de la llista i qui el
   // segon no fa cap diferència quan es demana no coincidir.
+  const avoidWeight = options.avoidWeight || AVOID_WEIGHT;
   Object.entries(avoid).forEach(([studentId, list]) => {
-    (list || []).forEach(targetId => add(studentId, targetId, -AVOID_WEIGHT));
+    (list || []).forEach(targetId => add(studentId, targetId, -avoidWeight));
   });
 
   const constraints = options.constraints;
@@ -688,6 +698,7 @@ function preferenceModel(ids, options = {}) {
   const model = preferenceWeights(ids, options.prefs || {}, {
     ranked,
     avoid: options.avoid,
+    avoidWeight: criterion === 'spread' ? AVOID_SPREAD_WEIGHT : AVOID_WEIGHT,
     constraints: options.constraints,
     includePrefs: criterion !== 'spread'
   });
@@ -740,6 +751,11 @@ function balancePenalty(group, model) {
  * Criteri "una tria per alumne": la primera preferència acomplerta suma, la
  * segona en descompta bona part i la tercera ja resta. Així el repartiment
  * escampa les tries en comptes de deixar que uns quants se les quedin totes.
+ *
+ * Qui ha respost i es queda sense ningú de la seva llista és el pitjor cas de
+ * tots: costa més que coincidir amb totes les tries alhora i més que qualsevol
+ * desequilibri de composició, de manera que el repartiment només hi arriba quan
+ * no hi ha cap altra sortida.
  */
 function spreadScore(group, model) {
   const inside = new Set(group);
@@ -754,8 +770,11 @@ function spreadScore(group, model) {
       met++;
       if (rank === 0) top = true;
     }
-    if (!met) continue;
-    score += SPREAD_FIRST - (met - 1) * SPREAD_EXTRA + (model.ranked && top ? SPREAD_TOP : 0);
+    if (!met) { score -= SPREAD_NONE; continue; }
+    const extra = SPREAD_FIRST - (met - 1) * SPREAD_EXTRA + (model.ranked && top ? SPREAD_TOP : 0);
+    // Coincidir amb massa tries és un mal menor: mai no pot sortir més car que
+    // deixar l'alumne sense cap.
+    score += Math.max(extra, -SPREAD_NONE + 1);
   }
   return score;
 }
@@ -813,6 +832,23 @@ function totalScore(groups, model, realGroups) {
   let total = 0;
   for (let g = 0; g < realGroups; g++) total += groupScore(groups[g], model);
   return total;
+}
+
+/**
+ * Alumnes que han respost i no tenen ningú de la seva llista a l'equip. Amb el
+ * criteri d'una tria per alumne, cap formació que en deixi més que una altra no
+ * pot guanyar, per bé que quedi de la resta: el zero sempre és el pitjor cas.
+ */
+function strandedCount(groups, model, realGroups) {
+  let count = 0;
+  for (let g = 0; g < realGroups; g++) {
+    const inside = new Set(groups[g]);
+    for (const studentId of groups[g]) {
+      const list = model.prefs[studentId];
+      if (list && list.length && !list.some(other => inside.has(other))) count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -944,12 +980,19 @@ function optimizePreferenceGroups(options) {
 
   let best = null;
   let bestScore = -Infinity;
-  for (let attempt = 0; attempt < restarts; attempt++) {
+  let bestStranded = Infinity;
+  // Mentre quedi algú sense cap de les seves tries, val la pena tornar-ho a
+  // provar: amb una altra sortida el repartiment sol trobar-li lloc.
+  const maxAttempts = model.criterion === 'spread' ? restarts * 3 : restarts;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt >= restarts && bestStranded === 0) break;
     const candidate = greedyAssign(ids, model, buckets, realGroups, random, fixed);
     improveAssignment(candidate, model, realGroups, rounds, fixed);
     const score = totalScore(candidate, model, realGroups);
-    if (score > bestScore) {
+    const stranded = model.criterion === 'spread' ? strandedCount(candidate, model, realGroups) : 0;
+    if (stranded < bestStranded || (stranded === bestStranded && score > bestScore)) {
       bestScore = score;
+      bestStranded = stranded;
       best = candidate.map(group => group.slice());
     }
   }
@@ -999,6 +1042,7 @@ function preferenceStats(groups, prefs, options = {}) {
   let avoidTotal = 0;
   let avoidBroken = 0;
   const clashes = [];
+  const unhappyIds = [];
 
   placed.forEach(id => {
     const index = teamOf.get(id);
@@ -1023,7 +1067,7 @@ function preferenceStats(groups, prefs, options = {}) {
     avoidBroken += clashIds.length;
     if (list.length) {
       answered++;
-      if (!metIds.length) unhappy++;
+      if (!metIds.length) { unhappy++; unhappyIds.push(id); }
       else if (metIds.length === 1) alone++;
       else crowded++;
     }
@@ -1069,7 +1113,7 @@ function preferenceStats(groups, prefs, options = {}) {
   });
   return {
     met, total, answered, unhappy, mutual, perStudent, perGroup,
-    alone, crowded, alonePct, balance, levels, criterion,
+    alone, crowded, alonePct, unhappyIds, balance, levels, criterion,
     avoidKept, avoidTotal, avoidBroken, clashes, avoidPct, pct,
     // Xifra que encapçala els indicadors, segons el criteri d'èxit triat.
     mainPct: criterion === 'spread' ? (alonePct === null ? avoidPct : alonePct)
@@ -1177,18 +1221,25 @@ function balanceAverage(balance) {
  * composició. Una separació sense respectar es paga cara, però no tant com per
  * acceptar qualsevol repartiment.
  */
-function qualityScore(pct, broken, balance) {
-  return (pct || 0) - (broken || 0) * PROPOSAL_CLASH_COST +
+function qualityScore(pct, broken, balance, none) {
+  return (pct || 0) - (broken || 0) * PROPOSAL_CLASH_COST - (none || 0) * PROPOSAL_NONE_COST +
     (balance === null || balance === undefined ? 0 : balance * BALANCE_QUALITY);
 }
 
+/**
+ * Amb el criteri d'una tria per alumne, el percentatge no distingeix entre qui
+ * n'ha acomplert massa i qui s'ha quedat sense cap: els que no en tenen cap
+ * compten a part perquè cap formació que en deixi de banda no guanyi.
+ */
 function proposalQuality(stats) {
-  return qualityScore(stats.mainPct, stats.avoidBroken, balanceAverage(stats.balance));
+  return qualityScore(stats.mainPct, stats.avoidBroken, balanceAverage(stats.balance),
+                      stats.criterion === 'spread' ? stats.unhappy : 0);
 }
 
 /** El mateix, per a la millor formació desada, que només en guarda el recompte. */
 function storedQuality(best) {
-  return qualityScore(best.pct, best.broken, best.balance === undefined ? null : best.balance);
+  return qualityScore(best.pct, best.broken, best.balance === undefined ? null : best.balance,
+                      best.none);
 }
 
 /** "3 separacions" / "1 separació". */
@@ -1327,6 +1378,22 @@ function criteriaHtml(stats) {
     </div>`).join('')}</div>`;
 }
 
+/**
+ * Avís dels alumnes que han respost i no tenen ningú de la seva llista. Amb el
+ * criteri d'una tria per alumne no hauria de passar mai: si surt, és que amb
+ * aquestes mides i aquestes restriccions no hi havia manera.
+ */
+function noneNoteHtml(stats, nameFor) {
+  if (stats.criterion !== 'spread' || !stats.unhappy) return '';
+  const names = stats.unhappyIds.slice(0, 8).map(nameFor).join(' · ');
+  return `<div class="pref-note pref-note-warn"><span class="mi mi-xs">sentiment_dissatisfied</span>
+      <div><b>${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta</b>
+      <div class="pref-note-meta">${esc(names)}${stats.unhappyIds.length > 8 ? ' · …' : ''}.
+      Amb aquestes mides d'equip i aquestes restriccions no s'ha pogut donar-los ningú
+      de la seva llista: prova una altra proposta, canvia la mida dels equips o
+      allibera alguna restricció.</div></div></div>`;
+}
+
 /** "Grup: aire 2 · terra 2 · Sexe: H 2 · D 2": com ha quedat compost un equip. */
 function compositionHtml(entry) {
   const parts = (entry?.composition || []).filter(item => item && item.values.length).map(item =>
@@ -1377,6 +1444,7 @@ function preferenceTeamView(groups) {
         ${matchBar(headline.pct)}
         <div class="pref-summary-meta">${esc(headline.meta)}</div>
       </div>
+      ${noneNoteHtml(stats, A.studentName)}
       ${rows.length > 1 ? `<details class="pref-criteria-box"${criteriaOpen ? ' open' : ''}>
         <summary data-action="prefToggleCriteria"><span class="mi mi-xs">expand_more</span> Grau d'assoliment de cada criteri</summary>
         ${criteriaHtml(stats)}
@@ -1428,6 +1496,7 @@ function rememberFormation(teams, stats) {
     pct: stats.mainPct === null ? 0 : stats.mainPct,
     broken: stats.avoidBroken,
     balance: balanceAverage(stats.balance),
+    none: stats.criterion === 'spread' ? stats.unhappy : 0,
     updated: formattedNow()
   };
   A.saveState();
@@ -2330,7 +2399,9 @@ function memberRowHtml(id, stats) {
     entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : '',
     entry.avoidIds.length ? `Havia demanat separar-se de: ${entry.avoidIds.map(nameOf).join(', ')}` : ''
   ].filter(Boolean).join(' · ') || 'Sense preferències indicades';
-  return `<div class="pref-member${W.picked === id ? ' pref-picked' : ''}${entry.avoidBroken ? ' pref-member-clash' : ''}" draggable="true"
+  // Amb el criteri d'una tria per alumne, qui es queda sense cap es marca.
+  const stranded = stats.criterion === 'spread' && entry.total && !entry.met;
+  return `<div class="pref-member${W.picked === id ? ' pref-picked' : ''}${entry.avoidBroken ? ' pref-member-clash' : ''}${stranded ? ' pref-member-none' : ''}" draggable="true"
       data-action="prefPick" data-sid="${esc(id)}" title="${esc(detail)}">
       <span class="pref-member-name">${esc(nameOf(id))}</span>
       <span class="pref-chip pref-${tone}">${entry.total ? `${entry.met}/${entry.total}` : '—'}</span>
@@ -2386,6 +2457,7 @@ function resultSummaryHtml() {
       <div class="pref-summary-meta">${esc(headline.meta)}${headline.meta ? ' · ' : ''}${esc(attemptMeta)}</div>
     </div>
     ${rows.length > 1 ? criteriaHtml(stats) : ''}
+    ${noneNoteHtml(stats, nameOf)}
     ${clashNoteHtml(stats)}
     ${W.best && proposalQuality(stats) < proposalQuality(W.best.stats) ? betterProposalHtml(stats) : ''}`;
 }

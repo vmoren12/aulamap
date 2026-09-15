@@ -139,6 +139,7 @@ function normalizePreferences(preferences, validIds) {
         broken: Number(preferences.best.broken) || 0,
         balance: Number.isFinite(Number(preferences.best.balance)) && preferences.best.balance !== null
           ? Number(preferences.best.balance) : null,
+        none: Number(preferences.best.none) || 0,
         updated: preferences.best.updated || ''
       };
     }

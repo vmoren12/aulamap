@@ -111,8 +111,12 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   - **Acomplir el màxim de preferències** (per defecte): cada alumne coincideix amb
     tanta gent de la seva llista com es pugui.
   - **Una preferència per alumne**: es minimitza que ningú coincideixi amb més d'una de
-    les seves tries, buscant que tothom en tingui exactament una i que ningú es quedi a
-    zero. Evita que uns quants s'enduguin totes les tries mentre altres no en tenen cap.
+    les seves tries. L'escenari ideal és exactament una, i **quedar-se a zero no és una
+    alternativa acceptable**: qui ha respost i no tindria ningú de la seva llista pesa
+    més que qualsevol desequilibri de composició —només una petició de separació o un
+    conjunt del docent hi passen al davant—, i entre dues propostes sempre mana la que
+    deixa menys gent sense ningú. Si amb aquelles mides d'equip i aquelles restriccions
+    no hi ha manera, es diu **qui ha quedat fora** i es marca el seu nom.
     Amb aquest criteri, el percentatge de preferències acomplertes deixa de mostrar-se
     —acomplir-ne més no seria millor—: al seu lloc es compten els alumnes que en tenen
     just una, tant al resum com a cada equip.
