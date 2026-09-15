@@ -291,9 +291,7 @@ function exportTeamsCsv(options = {}) {
   if (!teams.groups?.length) { toast('No hi ha equips formats', 'error'); return; }
   const preferences = teams.preferences;
   const stats = preferences
-    ? A.preferenceStats(teams.groups, preferences.prefs, {
-        avoid: preferences.avoid, attributes: preferences.attributes, criterion: preferences.criterion
-      })
+    ? A.preferenceStats(teams.groups, preferences.prefs, A.preferenceStatsOptions(preferences))
     : null;
   const withCompetency = options.competency !== false;
   const attributes = (A.ATTRIBUTES || [])

@@ -231,11 +231,17 @@ test('the indicators count what each student and each team gets', () => {
   assert.equal(stats.pct, 75);
   assert.equal(stats.answered, 3);
   assert.equal(stats.mutual, 1);
-  assert.deepEqual(plain(stats.perGroup[0]), { met: 2, total: 3, pct: 67, mutual: 1, avoidBroken: 0 });
-  assert.deepEqual(plain(stats.perGroup[1]), { met: 1, total: 1, pct: 100, mutual: 0, avoidBroken: 0 });
+  assert.deepEqual(plain(stats.perGroup[0]),
+    { met: 2, total: 3, pct: 67, mutual: 1, avoidBroken: 0, answered: 2, alone: 2, crowded: 0, alonePct: 100 });
+  assert.deepEqual(plain(stats.perGroup[1]),
+    { met: 1, total: 1, pct: 100, mutual: 0, avoidBroken: 0, answered: 1, alone: 1, crowded: 0, alonePct: 100 });
   assert.equal(A.matchTone(1, 2), 'medium');
   assert.equal(A.matchTone(0, 2), 'bad');
   assert.equal(A.matchTone(2, 2), 'good');
+  // Amb el criteri d'una tria per alumne, dues d'acomplertes ja no és el millor.
+  assert.equal(A.matchTone(1, 2, 'spread'), 'good');
+  assert.equal(A.matchTone(2, 2, 'spread'), 'medium');
+  assert.equal(A.matchTone(0, 2, 'spread'), 'bad');
 });
 
 test('preferences that name students out of the class are ignored by the counters', () => {

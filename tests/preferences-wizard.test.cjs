@@ -753,6 +753,44 @@ test('the success criterion is chosen before generating and travels with the she
   assert.match(helper.lastModal(), /Equilibrar grup d'origen/);
 });
 
+test('the competency column fills the levels panel and can be rescaled', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = [
+    'Nom i cognoms;Competència;Preferència 1',
+    'Anna Puig Solà;8;Pau Serra Vidal',
+    'Pau Serra Vidal;4;Anna Puig Solà',
+    'Nil Roca Camps;6;Anna Puig Solà',
+    'Jana Ferrer Mas;10;Pau Serra Vidal'
+  ].join('\r\n');
+  helper.run('prefReadSource');
+  assert.match(helper.lastModal(), /Competència \(valor numèric\)/);
+  helper.run('prefColumnsNext');
+  assert.match(helper.lastModal(), /Competència: 4 valors de 4 a 10/);
+
+  helper.run('prefStudentsNext');
+  const plan = helper.lastModal();
+  assert.match(plan, /Igualar el nivell mitjà dels equips/);
+  assert.match(plan, /value="4"/, "l'interval detectat es proposa com a mínim");
+  assert.match(plan, /value="10"/);
+
+  // L'escala real del full és 0–10, no 4–10: el docent la corregeix.
+  helper.run('prefSetLevelRange', { key: 'min' }, { value: '0' });
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+  assert.match(helper.lastModal(), /Equilibri · Competència/);
+  helper.run('prefApply');
+
+  const teams = helper.data.teams;
+  const idOf = name => helper.data.students.find(student => student.name === name).id;
+  assert.equal(teams.useCompetency, true, 'el panell de nivells s\'activa tot sol');
+  assert.equal(teams.heterogeneous, true);
+  assert.equal(teams.competencies[idOf('Anna Puig Solà')], 8);
+  assert.equal(teams.competencies[idOf('Pau Serra Vidal')], 4);
+  assert.equal(teams.preferences.levels[idOf('Jana Ferrer Mas')], 10, 'el valor del full es desa tal qual');
+  assert.deepEqual(JSON.parse(JSON.stringify(teams.preferences.levelRange)), { min: 0, max: 10 });
+});
+
 test('the side panel shows the achievement of every criterion', () => {
   const helper = setupWizard(CLASS);
   helper.run('startPreferenceWizard');

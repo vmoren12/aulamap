@@ -56,11 +56,13 @@ function removeStudentFromTeams(teams, studentId) {
         if (!links[id].length) delete links[id];
       });
     });
-    // El grup d'origen, el sexe i les necessitats també se'n van amb l'alumne.
+    // El grup d'origen, el sexe, les necessitats i la competència també se'n
+    // van amb l'alumne.
     Object.values(teams.preferences.attributes || {}).forEach(values => { delete values[studentId]; });
     Object.keys(teams.preferences.attributes || {}).forEach(key => {
       if (!Object.keys(teams.preferences.attributes[key]).length) delete teams.preferences.attributes[key];
     });
+    if (teams.preferences.levels) delete teams.preferences.levels[studentId];
     const best = teams.preferences.best;
     if (best) {
       best.groups = best.groups.map(group => group.filter(id => id !== studentId)).filter(group => group.length);
@@ -68,7 +70,8 @@ function removeStudentFromTeams(teams, studentId) {
     }
     if (!Object.keys(teams.preferences.prefs).length &&
         !Object.keys(teams.preferences.avoid || {}).length &&
-        !Object.keys(teams.preferences.attributes || {}).length) teams.preferences = null;
+        !Object.keys(teams.preferences.attributes || {}).length &&
+        !Object.keys(teams.preferences.levels || {}).length) teams.preferences = null;
   }
   delete teams.lockedStudents[studentId];
   [REL_TOGETHER, REL_SEPARATE].forEach(type => {
@@ -345,22 +348,68 @@ function createTeams() {
   doCreateTeams();
 }
 
+/**
+ * Equips a partir del full de preferències carregat: les tries, les
+ * separacions, la composició del grup i el criteri d'èxit que el docent hi va
+ * triar es mantenen, i s'hi sumen els conjunts d'ajuntar i separar del panell,
+ * els nivells de competència i els cadenats.
+ *
+ * @returns {string[][]|null}
+ */
+function buildTeamsFromPreferences(sizes, locked) {
+  const teams = A.getTeams();
+  const stored = teams.preferences;
+  if (!stored || !sizes.length || !A.optimizePreferenceGroups) return null;
+
+  // Cada equip bloquejat conserva el seu índex mentre hi càpiga dins del pla.
+  const fixed = {};
+  const used = new Set();
+  Object.entries(locked).forEach(([rawIndex, members]) => {
+    const preferred = parseInt(rawIndex, 10);
+    let target = preferred < sizes.length && !used.has(preferred) ? preferred : -1;
+    if (target === -1) target = sizes.findIndex((_, index) => !used.has(index));
+    if (target === -1) return;
+    used.add(target);
+    members.forEach(id => { fixed[id] = target; });
+  });
+
+  const result = A.optimizePreferenceGroups({
+    ids: teamStudents().map(student => student.id),
+    sizes,
+    prefs: stored.prefs,
+    avoid: stored.avoid,
+    ranked: stored.ranked,
+    attributes: stored.attributes,
+    balance: stored.balance,
+    criterion: stored.criterion,
+    levels: teams.useCompetency && teams.heterogeneous ? teams.competencies : null,
+    constraints: teams.constraints,
+    fixed,
+    seed: Math.floor(Math.random() * 1e9) + 1
+  });
+  const groups = result.groups.filter(group => group.length);
+  return groups.length ? groups : null;
+}
+
 function doCreateTeams() {
   const teams = A.getTeams();
   const plan = teamPlan();
   const locked = lockedTeamGroups();
   const lockedIds = new Set(Object.values(locked).flat());
   const hetero = teams.heterogeneous && teams.useCompetency;
+  const fromPreferences = !!teams.preferences;
 
-  let best = null;
+  let best = fromPreferences ? buildTeamsFromPreferences(plan.sizes, locked) : null;
   let bestScore = Infinity;
-  for (let attempt = 0; attempt < TEAM_ATTEMPTS; attempt++) {
-    const candidate = buildTeams(plan.sizes, locked, true);
-    if (!candidate) continue;
-    if (!hetero) { best = candidate; break; }
-    const score = heteroScore(candidate);
-    if (score < bestScore) { bestScore = score; best = candidate; }
-    if (score <= TEAM_HETERO_TARGET) break;
+  if (!fromPreferences) {
+    for (let attempt = 0; attempt < TEAM_ATTEMPTS; attempt++) {
+      const candidate = buildTeams(plan.sizes, locked, true);
+      if (!candidate) continue;
+      if (!hetero) { best = candidate; break; }
+      const score = heteroScore(candidate);
+      if (score < bestScore) { bestScore = score; best = candidate; }
+      if (score <= TEAM_HETERO_TARGET) break;
+    }
   }
 
   let relaxed = false;
@@ -369,7 +418,7 @@ function doCreateTeams() {
     relaxed = true;
   }
   if (!best) { toast('No s\'han pogut formar equips amb aquesta configuració', 'error'); return; }
-  if (hetero) refineTeamsBySwap(best, lockedIds);
+  if (hetero && !fromPreferences) refineTeamsBySwap(best, lockedIds);
 
   A.saveWithUndo();
   // Els cadenats es reasignen als índexs nous.
@@ -402,8 +451,13 @@ function doCreateTeams() {
   A.updateActiveTeamBadge();
   setTimeout(() => A.zoomReset(), 50);
 
-  if (relaxed) toast('Equips formats, però alguna restricció de separar no s\'ha pogut complir', 'info');
-  else toast(`Equips formats${lockedIds.size ? ` (${lockedIds.size} fixats)` : ''}`, 'success');
+  if (relaxed) { toast('Equips formats, però alguna restricció de separar no s\'ha pogut complir', 'info'); return; }
+  // Amb un full carregat es diu de seguida com ha anat el criteri que s'hi va triar.
+  const stats = fromPreferences
+    ? A.preferenceStats(teams.groups, teams.preferences.prefs, A.preferenceStatsOptions(teams.preferences))
+    : null;
+  const headline = stats ? A.criteriaList(stats).find(row => row.main) : null;
+  toast(`Equips formats${headline && headline.pct !== null ? ` · ${headline.pct}% · ${headline.label.toLowerCase()}` : ''}${lockedIds.size ? ` (${lockedIds.size} fixats)` : ''}`, 'success');
 }
 
 /** Incompliments per equip. */
@@ -1050,9 +1104,7 @@ function doExportTeams(includeCompetency) {
   const total = teams.groups.reduce((sum, group) => sum + group.length, 0);
   const preferences = teams.preferences;
   const stats = preferences
-    ? A.preferenceStats(teams.groups, preferences.prefs, {
-        avoid: preferences.avoid, attributes: preferences.attributes, criterion: preferences.criterion
-      })
+    ? A.preferenceStats(teams.groups, preferences.prefs, A.preferenceStatsOptions(preferences))
     : null;
 
   const lines = [
@@ -1140,6 +1192,7 @@ A.registerActions({
 Object.assign(A, {
   teamStudents, teamName, competencyOf, groupMean, teamIndexOf, removeStudentFromTeams,
   teamPlan, unifiedTogetherSets, teamContradictions, teamValidationErrors, buildTeams,
+  buildTeamsFromPreferences, doCreateTeams,
   createTeams, teamViolations, renderTeamsPanel, renderTeamsSidebar, renderSavedTeams,
   moveStudentsToTeam, moveStudentToTeam, startRenameTeam, toggleTeamLock, toggleStudentLock,
   teamsHaveUnsavedChanges, guardUnsavedTeams, loadSavedTeam, appendSavedTeam, saveCurrentTeam, deleteSavedTeam,

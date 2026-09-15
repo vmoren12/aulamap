@@ -90,8 +90,11 @@ test('the text file carries every criterion and how each team is made up', () =>
   helper.run('exportTeams');
   helper.run('doExportTeams', { value: 'txt' });
   const text = helper.lastText();
-  assert.match(text, /Preferències acomplertes: \d+% /);
+  // El full es va carregar amb el criteri d'una tria per alumne: el
+  // percentatge de tries acomplertes no hi surt.
+  assert.doesNotMatch(text, /Preferències acomplertes/);
   assert.match(text, /Amb una sola tria acomplerta: \d+%/);
+  assert.match(text, /Equilibri · Competència: \d+%/);
   assert.match(text, /Separacions respectades: 0% \(0 de 1 separació respectada\)/);
   assert.match(text, /Equilibri · Sexe: 100%/);
   assert.match(text, /Grup: Aire 1, Terra 1/, 'la composició de cada equip');

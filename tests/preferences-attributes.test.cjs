@@ -168,6 +168,59 @@ test('the balance can be switched off for one attribute', () => {
   assert.ok(offStats.balance.length, "l'indicador d'equilibri es compta igualment");
 });
 
+/* ── Competència ─────────────────────────────────────── */
+
+test('a numeric column is read as the competency and keeps its range', () => {
+  const { A } = setup();
+  const rows = [
+    ['Nom', 'Competència (1-10)', 'Preferència 1'],
+    ['Anna Puig', '7,5', 'Pau Serra'],
+    ['Pau Serra', '4', 'Anna Puig'],
+    ['Nil Roca', '', 'Anna Puig'],
+    ['Jana Ferrer', '9', 'Pau Serra']
+  ];
+  const mapping = plain(A.autoMapping(rows, true));
+  assert.equal(mapping.level, 1);
+  const entries = A.readEntries(rows, true, mapping).entries;
+  const roster = ['Anna Puig', 'Pau Serra', 'Nil Roca', 'Jana Ferrer']
+    .map((name, index) => ({ id: `s${index}`, name }));
+  Array.from(entries).forEach((entry, index) => { entry.studentId = roster[index].id; });
+
+  const levels = plain(A.buildLevels(entries, roster));
+  assert.deepEqual(levels.values, { s0: 7.5, s1: 4, s3: 9 }, 'la coma decimal i la casella buida');
+  assert.equal(levels.min, 4);
+  assert.equal(levels.max, 9);
+
+  // Els extrems triats es converteixen en el 0 i el 10 del panell d'equips.
+  assert.deepEqual(plain(A.scaleLevels(levels.values, { min: 4, max: 9 })), { s0: 7, s1: 0, s3: 10 });
+  assert.deepEqual(plain(A.scaleLevels(levels.values, { min: 0, max: 10 })), { s0: 7.5, s1: 4, s3: 9 });
+});
+
+test('a column of words is never taken for the competency', () => {
+  const { A } = setup();
+  const rows = [['Nom', 'Nivell'], ['Anna Puig', 'alt'], ['Pau Serra', 'baix'], ['Nil Roca', 'alt']];
+  assert.equal(plain(A.autoMapping(rows, true)).level, -1);
+});
+
+test('teams end up with the same average level', () => {
+  const ids = rosterOf(8);
+  const { A } = setup();
+  const levels = { A0: 10, A1: 9, A2: 8, A3: 7, A4: 3, A5: 2, A6: 1, A7: 0 };
+  const result = plain(A.optimizePreferenceGroups({ ids, prefs: {}, levels, sizes: [2, 2, 2, 2], seed: 6 }));
+  const stats = plain(A.preferenceStats(result.groups, {}, { levels }));
+  assert.ok(stats.levels.spread <= 1, `les mitjanes queden a prop (${stats.levels.spread})`);
+  assert.ok(stats.levels.pct >= 90);
+  assert.equal(stats.perGroup.every(entry => Number.isFinite(entry.levelMean)), true);
+});
+
+test('all the students at the same level leaves nothing to balance', () => {
+  const { A } = setup();
+  const levels = { A0: 5, A1: 5, A2: 5 };
+  const stats = plain(A.preferenceStats([['A0', 'A1'], ['A2']], {}, { levels }));
+  assert.equal(stats.levels.pct, 100);
+  assert.equal(plain(A.criteriaList(stats)).some(row => row.key === 'balance:level'), true);
+});
+
 /* ── Criteri d'èxit ──────────────────────────────────── */
 
 test('the "one choice each" criterion spreads the choices instead of piling them up', () => {
@@ -225,10 +278,16 @@ test('the criteria list carries one row per criterion, with the chosen one first
   const stats = plain(A.preferenceStats([['A0', 'A1'], ['A2', 'A3']], prefs,
     { avoid: { A2: ['A3'] }, attributes, criterion: 'spread' }));
   const rows = plain(A.criteriaList(stats));
-  assert.deepEqual(rows.map(row => row.key),
-    ['prefs', 'alone', 'avoid', 'balance:sex']);
+  // Amb el criteri d'una tria per alumne, el percentatge de tries acomplertes
+  // no diu res i no es mostra enlloc.
+  assert.deepEqual(rows.map(row => row.key), ['alone', 'avoid', 'balance:sex']);
   assert.equal(rows.find(row => row.main).key, 'alone');
-  assert.equal(rows[2].pct, 0, 'la separació demanada no s\'ha respectat');
+  assert.equal(rows[1].pct, 0, 'la separació demanada no s\'ha respectat');
+
+  const maxRows = plain(A.criteriaList(plain(A.preferenceStats([['A0', 'A1'], ['A2', 'A3']], prefs,
+    { avoid: { A2: ['A3'] }, attributes }))));
+  assert.deepEqual(maxRows.map(row => row.key), ['prefs', 'avoid', 'balance:sex']);
+  assert.equal(maxRows.find(row => row.main).key, 'prefs');
 });
 
 test('each team knows how it is made up', () => {

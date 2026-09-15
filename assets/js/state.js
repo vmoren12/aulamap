@@ -21,7 +21,8 @@ function defaultTeamsData() {
     preferences: null,            // { updated, source, ranked, criterion, prefs:{ studentId:[studentId] },
                                   //   avoid:{ studentId:[studentId] }, unresolved:[],
                                   //   attributes:{ group|sex|nee: { studentId: valor } },
-                                  //   balance:{ group|sex|nee: boolean } }
+                                  //   levels:{ studentId: número }, levelRange:{ min, max },
+                                  //   balance:{ group|sex|nee|level: boolean } }
     constraints: { together: [], separate: [] }, // [{ id, students:[studentId] }]
     groups: null,                 // [[studentId]]
     teamNames: {},                // { teamIndex: nom }
@@ -108,12 +109,22 @@ function normalizePreferences(preferences, validIds) {
     if (Object.keys(clean).length) attributes[key] = clean;
   });
   const balance = {};
-  ['group', 'sex', 'nee'].forEach(key => {
+  ['group', 'sex', 'nee', 'level'].forEach(key => {
     if (preferences.balance && preferences.balance[key] === false) balance[key] = false;
   });
 
+  // Competència: un número per alumne i els extrems de l'escala del full.
+  const levels = {};
+  Object.entries(preferences.levels || {}).forEach(([studentId, value]) => {
+    const number = Number(value);
+    if (validIds.has(studentId) && Number.isFinite(number)) levels[studentId] = number;
+  });
+  const bound = value => (Number.isFinite(Number(value)) && value !== null ? Number(value) : null);
+  const levelRange = { min: bound(preferences.levelRange?.min), max: bound(preferences.levelRange?.max) };
+
   // Un full només amb la composició del grup també val: encara es pot equilibrar.
-  if (!Object.keys(prefs).length && !Object.keys(avoid).length && !Object.keys(attributes).length) return null;
+  if (!Object.keys(prefs).length && !Object.keys(avoid).length &&
+      !Object.keys(attributes).length && !Object.keys(levels).length) return null;
 
   let best = null;
   const storedGroups = preferences.best?.groups;
@@ -141,6 +152,8 @@ function normalizePreferences(preferences, validIds) {
     prefs,
     avoid,
     attributes,
+    levels,
+    levelRange,
     balance,
     unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : [],
     best

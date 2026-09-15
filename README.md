@@ -88,6 +88,12 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   capçalera i, com totes les altres, **el docent pot dir quina columna conté cada
   variable** —o cap— al pas de les columnes. Cada dada es pot activar o desactivar abans
   de generar la proposta.
+- I una columna de **competència** amb un valor numèric (una nota, un nivell
+  d'assoliment...). El docent en confirma el **mínim i el màxim** de l'escala —per
+  defecte, els que s'hagin detectat al full— i aquests dos extrems es converteixen en el
+  0 i el 10 del **nivell de competència del panell d'equips**, que s'omple tot sol en
+  carregar la proposta. Amb l'opció activada, els equips es formen **igualant-ne el
+  nivell mitjà**, que és el que fa els grups heterogenis.
 - **Identifica els noms** encara que estiguin escrits a mitges, sense accents, en
   minúscules o amb els cognoms al davant. El que no es pot identificar amb seguretat
   s'informa en comptes d'endevinar-ho.
@@ -107,6 +113,13 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   - **Una preferència per alumne**: es minimitza que ningú coincideixi amb més d'una de
     les seves tries, buscant que tothom en tingui exactament una i que ningú es quedi a
     zero. Evita que uns quants s'enduguin totes les tries mentre altres no en tenen cap.
+    Amb aquest criteri, el percentatge de preferències acomplertes deixa de mostrar-se
+    —acomplir-ne més no seria millor—: al seu lloc es compten els alumnes que en tenen
+    just una, tant al resum com a cada equip.
+- Un cop carregada la proposta, el botó **Formar equips** del panell segueix respectant
+  tot el que es va definir en importar el full (tries, separacions, composició, criteri
+  d'èxit) i **hi suma el que s'hi hagi afegit després**: els conjunts d'ajuntar i
+  separar, els nivells de competència i els equips o alumnes amb cadenat.
 - Amb les dades de composició carregades, els equips es formen **equilibrant el grup
   d'origen, el sexe i les necessitats educatives**: repartir cada valor entre tots els
   equips és exactament minimitzar les parelles que el comparteixen dins d'un mateix
@@ -121,8 +134,8 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   (`2/3`, amb color i amb el detall de qui té a prop i qui li falta). Els indicadors es
   queden al panell d'Equips, al llenç i a les exportacions.
 - Dóna el **grau d'assoliment de cada criteri** amb la seva barra: preferències
-  acomplertes, alumnes amb una sola tria acomplerta, separacions respectades i equilibri
-  de cada dada de composició. Surten a la proposta i al **menú lateral del llenç**, on es
+  acomplertes (o alumnes amb una sola tria acomplerta, segons el criteri triat),
+  separacions respectades i equilibri de cada dada de composició i del nivell mitjà. Surten a la proposta i al **menú lateral del llenç**, on es
   refan **en temps real** a cada canvi d'equip, i cada targeta d'equip diu com ha quedat
   composta («Grup aire 2 · terra 2 · Sexe D 2 · H 2»).
 - Compta les **separacions respectades** i, quan amb aquelles mides d'equip no n'hi ha
@@ -140,8 +153,8 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
 
 A `exemples/` hi ha fulls de respostes de prova amb alumnes inventats:
 `preferencies-30-alumnes-complet.xlsx` i el mateix full en `.csv` (30 alumnes amb totes
-les columnes: marca de temps, nom, grup d'origen, sexe, necessitats educatives, tres
-preferències i una separació), `preferencies-60-alumnes.csv` (60 alumnes, amb columnes
+les columnes: marca de temps, nom, grup d'origen, sexe, necessitats educatives,
+competència d'1 a 10, tres preferències i una separació), `preferencies-60-alumnes.csv` (60 alumnes, amb columnes
 buides, una resposta repetida i un nom de fora del grup) i
 `preferencies-28-alumnes-separacions.csv` (28 alumnes amb una columna de separació:
 peticions recíproques i d'una sola banda, algú que només respon la separació, un nom
@@ -244,10 +257,11 @@ state
                         (`layout`), equips desats i preferències de l'alumnat
                         (`preferences`: qui ha triat qui (`prefs`), qui vol estar
                         separat de qui (`avoid`), el grup d'origen, el sexe i les
-                        necessitats de cadascú (`attributes`), quines d'aquestes
-                        dades s'equilibren (`balance`), el criteri d'èxit
-                        (`criterion`), l'origen del full i els noms que no s'han
-                        pogut identificar)
+                        necessitats de cadascú (`attributes`), la competència del
+                        full i la seva escala (`levels`, `levelRange`), quines
+                        d'aquestes dades s'equilibren (`balance`), el criteri
+                        d'èxit (`criterion`), l'origen del full i els noms que no
+                        s'han pogut identificar)
 ```
 
 Les dades de versions anteriors (`aulamap_v4`, `aulamap_equips_v1`) es migren

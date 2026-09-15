@@ -1,31 +1,31 @@
-﻿Marca de temps;Nom i cognoms;Grup actual;Sexe;Necessitats educatives (NEE);Amb qui vols treballar? (1a opció);Amb qui vols treballar? (2a opció);Amb qui vols treballar? (3a opció);Amb qui prefereixes NO coincidir? (Separar 1)
-12/05/2026 9:02;Aina Bosch Prat;Aire;D;;Berta Camps Roig;Ona Freixes Marí;Ivet Molins Ferrer;
-12/05/2026 9:03;Arnau Ferrer Vidal;Terra;H;;Biel Sala Monfort;Lluc Amat Pujol;Nil Casals Duran;
-12/05/2026 9:04;Berta Camps Roig;Aire;D;;Aina Bosch Prat;Ona Freixes Marí;Carla Ruiz Bonet;Marçal Gibert Soler
-12/05/2026 9:05;Biel Sala Monfort;Terra;H;S;Arnau Ferrer Vidal;Nil Casals Duran;Lluc Amat Pujol;
-12/05/2026 9:06;Carla Ruiz Bonet;Aigua;D;;Berta Camps Roig;Ivet Molins Ferrer;Aina Bosch Prat;
-12/05/2026 9:07;Dani Oliva Serra;Foc;H;;Enric Vila Camps;Guim Peris Nadal;Arnau Ferrer Vidal;
-12/05/2026 9:08;Elna Piera Costa;Aire;D;;Ivet Molins Ferrer;Júlia Bofill Tena;Carla Ruiz Bonet;
-12/05/2026 9:09;Enric Vila Camps;Foc;H;;Dani Oliva Serra;Guim Peris Nadal;Pol Maset Rius;
-12/05/2026 9:10;Ferran Aymar Lluch;Terra;H;S;Nil Casals Duran;Biel Sala Monfort;Roc Fabra Tur;
-12/05/2026 9:11;Gemma Sendra Prats;Aigua;D;;Helena Duran Mas;Júlia Bofill Tena;Laia Morera Font;
-12/05/2026 9:12;Guim Peris Nadal;Foc;H;;Dani Oliva Serra;Enric Vila Camps;Pol Maset Rius;Ferran Aymar Lluch
-12/05/2026 9:13;Helena Duran Mas;Aigua;D;;Gemma Sendra Prats;Laia Morera Font;Marta Espí Vidal;
-12/05/2026 9:14;Ivet Molins Ferrer;Aire;D;;Elna Piera Costa;Aina Bosch Prat;Carla Ruiz Bonet;
-12/05/2026 9:15;Jordi Benet Puig;Terra;H;;Lluc Amat Pujol;Roc Fabra Tur;Arnau Ferrer Vidal;
-12/05/2026 9:16;Júlia Bofill Tena;Aigua;D;S;Gemma Sendra Prats;Elna Piera Costa;Helena Duran Mas;
-12/05/2026 9:17;Lluc Amat Pujol;Terra;H;;Jordi Benet Puig;Arnau Ferrer Vidal;Biel Sala Monfort;
-12/05/2026 9:18;Laia Morera Font;Aigua;D;;Helena Duran Mas;Gemma Sendra Prats;Nora Vendrell Aran;
-12/05/2026 9:19;Marçal Gibert Soler;Foc;H;;Pol Maset Rius;Quim Batlle Sanç;Dani Oliva Serra;Berta Camps Roig
-12/05/2026 9:20;Marta Espí Vidal;Aire;D;;Nora Vendrell Aran;Ona Freixes Marí;Helena Duran Mas;
-12/05/2026 9:21;Nil Casals Duran;Terra;H;;Ferran Aymar Lluch;Biel Sala Monfort;Jordi Benet Puig;
-12/05/2026 9:22;Nora Vendrell Aran;Aire;D;;Marta Espí Vidal;Laia Morera Font;Ona Freixes Marí;
-12/05/2026 9:23;Ona Freixes Marí;Aire;D;S;Aina Bosch Prat;Berta Camps Roig;Nora Vendrell Aran;
-12/05/2026 9:24;Pol Maset Rius;Foc;H;;Marçal Gibert Soler;Enric Vila Camps;Quim Batlle Sanç;
-12/05/2026 9:25;Quim Batlle Sanç;Foc;H;;Pol Maset Rius;Marçal Gibert Soler;Guim Peris Nadal;
-12/05/2026 9:26;Roc Fabra Tur;Terra;H;;Jordi Benet Puig;Ferran Aymar Lluch;Nil Casals Duran;
-12/05/2026 9:27;Rita Nogués Clua;Aigua;D;;Sara Miret Badia;Laia Morera Font;Txell Roig Cases;
-12/05/2026 9:28;Sara Miret Badia;Aigua;D;S;Rita Nogués Clua;Txell Roig Cases;Gemma Sendra Prats;
-12/05/2026 9:29;Txell Roig Cases;Aigua;D;;Rita Nogués Clua;Sara Miret Badia;Marta Espí Vidal;
-12/05/2026 9:30;Unai Ferré Roca;Foc;H;;Quim Batlle Sanç;Vidal Cortès Pi;Pol Maset Rius;
-12/05/2026 9:31;Vidal Cortès Pi;Terra;H;;Unai Ferré Roca;Roc Fabra Tur;Lluc Amat Pujol;
+﻿Marca de temps;Nom i cognoms;Grup actual;Sexe;Necessitats educatives (NEE);Competència (1-10);Amb qui vols treballar? (1a opció);Amb qui vols treballar? (2a opció);Amb qui vols treballar? (3a opció);Amb qui prefereixes NO coincidir? (Separar 1)
+12/05/2026 9:02;Aina Bosch Prat;Aire;D;;7,5;Berta Camps Roig;Ona Freixes Marí;Ivet Molins Ferrer;
+12/05/2026 9:03;Arnau Ferrer Vidal;Terra;H;;4;Biel Sala Monfort;Lluc Amat Pujol;Nil Casals Duran;
+12/05/2026 9:04;Berta Camps Roig;Aire;D;;8;Aina Bosch Prat;Ona Freixes Marí;Carla Ruiz Bonet;Marçal Gibert Soler
+12/05/2026 9:05;Biel Sala Monfort;Terra;H;S;3,5;Arnau Ferrer Vidal;Nil Casals Duran;Lluc Amat Pujol;
+12/05/2026 9:06;Carla Ruiz Bonet;Aigua;D;;6;Berta Camps Roig;Ivet Molins Ferrer;Aina Bosch Prat;
+12/05/2026 9:07;Dani Oliva Serra;Foc;H;;9;Enric Vila Camps;Guim Peris Nadal;Arnau Ferrer Vidal;
+12/05/2026 9:08;Elna Piera Costa;Aire;D;;5,5;Ivet Molins Ferrer;Júlia Bofill Tena;Carla Ruiz Bonet;
+12/05/2026 9:09;Enric Vila Camps;Foc;H;;2,5;Dani Oliva Serra;Guim Peris Nadal;Pol Maset Rius;
+12/05/2026 9:10;Ferran Aymar Lluch;Terra;H;S;4,5;Nil Casals Duran;Biel Sala Monfort;Roc Fabra Tur;
+12/05/2026 9:11;Gemma Sendra Prats;Aigua;D;;7;Helena Duran Mas;Júlia Bofill Tena;Laia Morera Font;
+12/05/2026 9:12;Guim Peris Nadal;Foc;H;;8,5;Dani Oliva Serra;Enric Vila Camps;Pol Maset Rius;Ferran Aymar Lluch
+12/05/2026 9:13;Helena Duran Mas;Aigua;D;;6,5;Gemma Sendra Prats;Laia Morera Font;Marta Espí Vidal;
+12/05/2026 9:14;Ivet Molins Ferrer;Aire;D;;3;Elna Piera Costa;Aina Bosch Prat;Carla Ruiz Bonet;
+12/05/2026 9:15;Jordi Benet Puig;Terra;H;;5;Lluc Amat Pujol;Roc Fabra Tur;Arnau Ferrer Vidal;
+12/05/2026 9:16;Júlia Bofill Tena;Aigua;D;S;9,5;Gemma Sendra Prats;Elna Piera Costa;Helena Duran Mas;
+12/05/2026 9:17;Lluc Amat Pujol;Terra;H;;4;Jordi Benet Puig;Arnau Ferrer Vidal;Biel Sala Monfort;
+12/05/2026 9:18;Laia Morera Font;Aigua;D;;7,5;Helena Duran Mas;Gemma Sendra Prats;Nora Vendrell Aran;
+12/05/2026 9:19;Marçal Gibert Soler;Foc;H;;2;Pol Maset Rius;Quim Batlle Sanç;Dani Oliva Serra;Berta Camps Roig
+12/05/2026 9:20;Marta Espí Vidal;Aire;D;;6;Nora Vendrell Aran;Ona Freixes Marí;Helena Duran Mas;
+12/05/2026 9:21;Nil Casals Duran;Terra;H;;8;Ferran Aymar Lluch;Biel Sala Monfort;Jordi Benet Puig;
+12/05/2026 9:22;Nora Vendrell Aran;Aire;D;;5;Marta Espí Vidal;Laia Morera Font;Ona Freixes Marí;
+12/05/2026 9:23;Ona Freixes Marí;Aire;D;S;3,5;Aina Bosch Prat;Berta Camps Roig;Nora Vendrell Aran;
+12/05/2026 9:24;Pol Maset Rius;Foc;H;;9;Marçal Gibert Soler;Enric Vila Camps;Quim Batlle Sanç;
+12/05/2026 9:25;Quim Batlle Sanç;Foc;H;;6,5;Pol Maset Rius;Marçal Gibert Soler;Guim Peris Nadal;
+12/05/2026 9:26;Roc Fabra Tur;Terra;H;;4,5;Jordi Benet Puig;Ferran Aymar Lluch;Nil Casals Duran;
+12/05/2026 9:27;Rita Nogués Clua;Aigua;D;;7;Sara Miret Badia;Laia Morera Font;Txell Roig Cases;
+12/05/2026 9:28;Sara Miret Badia;Aigua;D;S;8,5;Rita Nogués Clua;Txell Roig Cases;Gemma Sendra Prats;
+12/05/2026 9:29;Txell Roig Cases;Aigua;D;;5,5;Rita Nogués Clua;Sara Miret Badia;Marta Espí Vidal;
+12/05/2026 9:30;Unai Ferré Roca;Foc;H;;3;Quim Batlle Sanç;Vidal Cortès Pi;Pol Maset Rius;
+12/05/2026 9:31;Vidal Cortès Pi;Terra;H;;6;Unai Ferré Roca;Roc Fabra Tur;Lluc Amat Pujol;

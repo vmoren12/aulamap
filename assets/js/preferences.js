@@ -36,6 +36,9 @@ const CONSTRAINT_WEIGHT = 500;   // ajuntar/separar pesen més que cap preferèn
 // haver de renunciar a les preferències més fortes.
 const BALANCE_WEIGHT = 4;
 const BALANCE_QUALITY = 0.25;    // pes de l'equilibri en comparar dues formacions
+// Nivell mitjà: cada punt que un equip s'allunya de la mitjana de la classe
+// resta prou com per pesar més que una tria de tercera opció.
+const LEVEL_WEIGHT = 3;
 // Criteri "una tria per alumne": la primera preferència acomplerta suma, la
 // segona en descompta una part i la tercera ja fa nosa.
 const SPREAD_FIRST = 12;
@@ -71,6 +74,19 @@ const ATTRIBUTES = [
 ];
 
 const ATTRIBUTE_KEYS = ATTRIBUTES.map(attribute => attribute.key);
+
+/**
+ * Columna de competència: un valor numèric per alumne (una nota, un nivell
+ * d'assoliment...). No s'escampa com els altres, sinó que serveix per igualar
+ * el nivell mitjà dels equips, que és el que fa els grups heterogenis.
+ */
+const LEVEL = {
+  key: 'level', label: 'Competència', short: 'Nivell',
+  hint: /(compet|nivell|nota|qualific|puntuaci|rendiment|assoliment|grau)/i
+};
+
+/** Escala del panell d'equips: els valors del full s'hi converteixen. */
+const LEVEL_SCALE = 10;
 
 /** Definició d'un atribut a partir de la seva clau. */
 function attributeByKey(key) { return ATTRIBUTES.find(attribute => attribute.key === key) || null; }
@@ -203,6 +219,59 @@ function attributeValues(attribute, map) {
   return [...counts.values()].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
 }
 
+/* ── Competència ─────────────────────────────────────── */
+
+/** Número d'una cel·la, admetent la coma decimal. `null` si no n'hi ha cap. */
+function numberOf(value) {
+  const text = String(value ?? '').trim().replace(',', '.');
+  if (!text || !/^-?\d+(\.\d+)?$/.test(text)) return null;
+  const number = parseFloat(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Valors de competència llegits del full i el seu interval. L'interval és el
+ * que es proposa al docent, que el pot canviar si el full no arriba als
+ * extrems de l'escala amb què s'ha avaluat.
+ * @returns {{values:Object<string,number>, min:number|null, max:number|null}}
+ */
+function buildLevels(entries, roster) {
+  const ids = new Set(roster.map(student => student.id));
+  const values = {};
+  let min = null;
+  let max = null;
+  entries.forEach(entry => {
+    if (!entry.studentId || !ids.has(entry.studentId)) return;
+    const number = numberOf(entry.level);
+    if (number === null) return;
+    values[entry.studentId] = number;
+    min = min === null ? number : Math.min(min, number);
+    max = max === null ? number : Math.max(max, number);
+  });
+  return { values, min, max };
+}
+
+/**
+ * Competències convertides a l'escala 0–10 del panell d'equips, amb els
+ * extrems que hagi triat el docent. Si tots els valors són iguals, tothom es
+ * queda al mig de l'escala.
+ * @returns {Object<string,number>}
+ */
+function scaleLevels(values, range) {
+  const min = Number.isFinite(range?.min) ? range.min : null;
+  const max = Number.isFinite(range?.max) ? range.max : null;
+  const span = min === null || max === null ? 0 : max - min;
+  const scaled = {};
+  Object.entries(values || {}).forEach(([studentId, value]) => {
+    const level = span > 0
+      ? ((Math.max(min, Math.min(max, value)) - min) / span) * LEVEL_SCALE
+      : LEVEL_SCALE / 2;
+    // El panell edita els nivells de mig en mig punt: s'hi arrodoneix.
+    scaled[studentId] = Math.round(level * 2) / 2;
+  });
+  return scaled;
+}
+
 /** Atributs carregats que tenen alguna cosa a dir, en l'ordre de sempre. */
 function activeAttributes(attributes) {
   return ATTRIBUTES
@@ -245,6 +314,13 @@ function looksLikeNames(values) {
     !/^\d/.test(value) && !/\d{1,2}[:/]\d/.test(value));
 }
 
+/** Els valors d'una columna són números? (la competència ho ha de ser) */
+function looksLikeNumbers(values) {
+  const filled = values.filter(Boolean);
+  if (!filled.length) return false;
+  return filled.every(value => numberOf(value) !== null);
+}
+
 /** La primera fila és una capçalera? */
 function looksLikeHeader(rows) {
   if (rows.length < 2) return false;
@@ -285,6 +361,7 @@ function autoMapping(rows, hasHeader) {
   const attrs = {};
   const taken = new Set();
   ATTRIBUTES.forEach(attribute => { attrs[attribute.key] = -1; });
+  let level = -1;
   if (hasHeader) {
     ATTRIBUTES.forEach(attribute => {
       const found = usable.find(index => index !== name && !taken.has(index) &&
@@ -295,6 +372,12 @@ function autoMapping(rows, hasHeader) {
       attrs[attribute.key] = found;
       taken.add(found);
     });
+    // La competència, a diferència de les altres, ha de ser numèrica.
+    level = usable.find(index => index !== name && !taken.has(index) &&
+      LEVEL.hint.test(labels[index]) && !PREF_HINT.test(labels[index]) &&
+      !AVOID_HINT.test(labels[index]) &&
+      looksLikeNumbers(columnValues(rows, hasHeader, index))) ?? -1;
+    if (level >= 0) taken.add(level);
   }
 
   const avoid = usable
@@ -311,7 +394,7 @@ function autoMapping(rows, hasHeader) {
   }
   prefs = prefs.slice(0, MAX_PREF_COLUMNS);
   while (prefs.length < 3) prefs.push(-1);
-  return { name, prefs, avoid, attrs };
+  return { name, prefs, avoid, attrs, level };
 }
 
 /**
@@ -346,6 +429,7 @@ function readEntries(rows, hasHeader, mapping) {
     const choices = cells(row, mapping.prefs);
     const avoid = cells(row, mapping.avoid);
     const attrs = attrsOf(row);
+    const level = mapping.level >= 0 ? String(row[mapping.level] || '').trim() : '';
     if (!name) {
       if (choices.length || avoid.length) nameless++;
       return;
@@ -358,9 +442,10 @@ function readEntries(rows, hasHeader, mapping) {
       if (choices.length) previous.choices = choices;
       if (avoid.length) previous.avoid = avoid;
       if (Object.keys(attrs).length) previous.attrs = { ...previous.attrs, ...attrs };
+      if (level) previous.level = level;
       return;
     }
-    const entry = { name, choices, avoid, attrs, studentId: null };
+    const entry = { name, choices, avoid, attrs, level, studentId: null };
     seen.set(key, entry);
     entries.push(entry);
   });
@@ -610,7 +695,24 @@ function preferenceModel(ids, options = {}) {
   model.ranked = ranked;
   model.prefs = options.prefs || {};
   model.balance = balanceCodes(ids, options.attributes, options.balance);
+  model.levels = levelModel(ids, options.levels);
   return model;
+}
+
+/**
+ * Nivells de competència dels alumnes que es reparteixen i la mitjana de tots
+ * plegats. Sense valors, o amb tots iguals, no hi ha res a igualar.
+ * @returns {{value:number[], mean:number}|null}
+ */
+function levelModel(ids, levels) {
+  if (!levels) return null;
+  const value = ids.map(id => (Number.isFinite(levels[id]) ? levels[id] : null));
+  const known = value.filter(level => level !== null);
+  if (known.length < 2) return null;
+  const mean = known.reduce((sum, level) => sum + level, 0) / known.length;
+  if (known.every(level => level === known[0])) return null;
+  // Qui no té nivell compta com la mitjana: no desequilibra cap equip.
+  return { value: value.map(level => (level === null ? mean : level)), mean };
 }
 
 /**
@@ -658,6 +760,17 @@ function spreadScore(group, model) {
   return score;
 }
 
+/**
+ * Distància del nivell mitjà de l'equip al de la classe. Igualar les mitjanes
+ * és el que fa que dins de cada equip hi hagi de tot: grups heterogenis.
+ */
+function levelPenalty(group, model) {
+  if (!model.levels || !group.length) return 0;
+  let sum = 0;
+  for (const studentId of group) sum += model.levels.value[model.index.get(studentId)];
+  return Math.abs(sum - model.levels.mean * group.length) * LEVEL_WEIGHT;
+}
+
 /** Qualitat d'un equip sencer: afinitats, equilibri i criteri d'èxit. */
 function groupScore(group, model) {
   let score = 0;
@@ -666,6 +779,7 @@ function groupScore(group, model) {
     for (let j = i + 1; j < group.length; j++) score += row[model.index.get(group[j])];
   }
   score -= balancePenalty(group, model);
+  score -= levelPenalty(group, model);
   if (model.criterion === 'spread') score += spreadScore(group, model);
   return score;
 }
@@ -701,11 +815,20 @@ function totalScore(groups, model, realGroups) {
   return total;
 }
 
-/** Construcció voraç: a cada pas, la parella alumne–equip que més suma. */
-function greedyAssign(ids, model, buckets, realGroups, random) {
+/**
+ * Construcció voraç: a cada pas, la parella alumne–equip que més suma.
+ * Els alumnes fixats (`fixed`) ja entren col·locats i no es mouen mai.
+ */
+function greedyAssign(ids, model, buckets, realGroups, random, fixed) {
   const groups = buckets.map(() => []);
   const scores = buckets.map(() => 0);
   const pending = new Set(shuffled(ids, random));
+  Object.entries(fixed || {}).forEach(([studentId, index]) => {
+    if (!pending.has(studentId) || !groups[index]) return;
+    groups[index].push(studentId);
+    pending.delete(studentId);
+  });
+  groups.forEach((group, g) => { if (g < realGroups && group.length) scores[g] = groupScore(group, model); });
   while (pending.size) {
     let bestStudent = null;
     let bestGroup = -1;
@@ -739,7 +862,8 @@ function greedyAssign(ids, model, buckets, realGroups, random) {
  * la composició i el criteri d'"una tria per alumne" depenen de qui més hi ha
  * a l'equip, i no es poden repartir entre parelles.
  */
-function improveAssignment(groups, model, realGroups, rounds) {
+function improveAssignment(groups, model, realGroups, rounds, fixed) {
+  const locked = new Set(Object.keys(fixed || {}));
   const scoreOf = g => (g < realGroups ? groupScore(groups[g], model) : 0);
   const scores = groups.map((_, g) => scoreOf(g));
   for (let round = 0; round < rounds; round++) {
@@ -748,9 +872,11 @@ function improveAssignment(groups, model, realGroups, rounds) {
     for (let gi = 0; gi < groups.length; gi++) {
       for (let gj = gi + 1; gj < groups.length; gj++) {
         for (let ai = 0; ai < groups[gi].length; ai++) {
+          if (locked.has(groups[gi][ai])) continue;
           for (let bj = 0; bj < groups[gj].length; bj++) {
             const a = groups[gi][ai];
             const b = groups[gj][bj];
+            if (locked.has(b)) continue;
             groups[gi][ai] = b;
             groups[gj][bj] = a;
             const delta = scoreOf(gi) + scoreOf(gj) - scores[gi] - scores[gj];
@@ -781,6 +907,7 @@ function improveAssignment(groups, model, realGroups, rounds) {
  *
  * @param {{ids:string[], prefs:Object, avoid?:Object, sizes:number[], leftover?:number,
  *          ranked?:boolean, constraints?:Object, attributes?:Object, balance?:Object,
+ *          levels?:Object, fixed?:Object<string,number>,
  *          criterion?:'max'|'spread', seed?:number, restarts?:number}} options
  * @returns {{groups:string[][], leftover:string[], score:number}}
  */
@@ -795,11 +922,21 @@ function optimizePreferenceGroups(options) {
     constraints: options.constraints,
     attributes: options.attributes,
     balance: options.balance,
+    levels: options.levels,
     criterion: options.criterion
   });
   if (!ids.length || !sizes.length) return { groups: sizes.map(() => []), leftover: ids, score: 0 };
 
-  const buckets = leftoverSize > 0 ? [...sizes, leftoverSize] : sizes.slice();
+  // Els alumnes fixats ocupen lloc al seu equip encara que en sobrepassin la mida.
+  const known = new Set(ids);
+  const fixed = {};
+  Object.entries(options.fixed || {}).forEach(([studentId, index]) => {
+    if (known.has(studentId) && index >= 0 && index < sizes.length) fixed[studentId] = index;
+  });
+  const counts = sizes.map(() => 0);
+  Object.values(fixed).forEach(index => { counts[index]++; });
+  const buckets = sizes.map((size, index) => Math.max(size, counts[index]));
+  if (leftoverSize > 0) buckets.push(leftoverSize);
   const realGroups = sizes.length;
   const random = seededRandom(options.seed || 1);
   const restarts = options.restarts || (ids.length > 90 ? 4 : 8);
@@ -808,8 +945,8 @@ function optimizePreferenceGroups(options) {
   let best = null;
   let bestScore = -Infinity;
   for (let attempt = 0; attempt < restarts; attempt++) {
-    const candidate = greedyAssign(ids, model, buckets, realGroups, random);
-    improveAssignment(candidate, model, realGroups, rounds);
+    const candidate = greedyAssign(ids, model, buckets, realGroups, random, fixed);
+    improveAssignment(candidate, model, realGroups, rounds, fixed);
     const score = totalScore(candidate, model, realGroups);
     if (score > bestScore) {
       bestScore = score;
@@ -850,7 +987,8 @@ function preferenceStats(groups, prefs, options = {}) {
 
   const placed = new Set(teamOf.keys());
   const perStudent = {};
-  const perGroup = groups.map(() => ({ met: 0, total: 0, pct: null, mutual: 0, avoidBroken: 0 }));
+  const perGroup = groups.map(() => ({ met: 0, total: 0, pct: null, mutual: 0, avoidBroken: 0,
+                                       answered: 0, alone: 0, crowded: 0, alonePct: null }));
   let met = 0;
   let total = 0;
   let answered = 0;
@@ -893,6 +1031,11 @@ function preferenceStats(groups, prefs, options = {}) {
       perGroup[index].met += metIds.length;
       perGroup[index].total += list.length;
       perGroup[index].avoidBroken += clashIds.length;
+      if (list.length) {
+        perGroup[index].answered++;
+        if (metIds.length === 1) perGroup[index].alone++;
+        else if (metIds.length > 1) perGroup[index].crowded++;
+      }
       metIds.forEach(other => {
         if ((prefs[other] || []).includes(id) && id < other) { mutual++; perGroup[index].mutual++; }
       });
@@ -904,12 +1047,16 @@ function preferenceStats(groups, prefs, options = {}) {
     }
   });
 
-  perGroup.forEach(entry => { entry.pct = entry.total ? Math.round(entry.met * 100 / entry.total) : null; });
+  perGroup.forEach(entry => {
+    entry.pct = entry.total ? Math.round(entry.met * 100 / entry.total) : null;
+    entry.alonePct = entry.answered ? Math.round(entry.alone * 100 / entry.answered) : null;
+  });
   const avoidKept = avoidTotal - avoidBroken;
   const pct = total ? Math.round(met * 100 / total) : null;
   const avoidPct = avoidTotal ? Math.round(avoidKept * 100 / avoidTotal) : null;
   const alonePct = answered ? Math.round(alone * 100 / answered) : null;
   const balance = balanceStats(groups, options.attributes);
+  const levels = levelStats(groups, options.levels, perGroup);
   const criterion = options.criterion === 'spread' ? 'spread' : 'max';
   balance.forEach((entry, index) => {
     // Cada equip porta la seva composició a mà per al panell i el llenç.
@@ -922,7 +1069,7 @@ function preferenceStats(groups, prefs, options = {}) {
   });
   return {
     met, total, answered, unhappy, mutual, perStudent, perGroup,
-    alone, crowded, alonePct, balance, criterion,
+    alone, crowded, alonePct, balance, levels, criterion,
     avoidKept, avoidTotal, avoidBroken, clashes, avoidPct, pct,
     // Xifra que encapçala els indicadors, segons el criteri d'èxit triat.
     mainPct: criterion === 'spread' ? (alonePct === null ? avoidPct : alonePct)
@@ -988,6 +1135,35 @@ function balanceStats(groups, attributes) {
   }).filter(Boolean);
 }
 
+/**
+ * Com d'igualats queden els nivells mitjans dels equips. El 100% és que tots
+ * tinguin la mateixa mitjana; el 0%, que la diferència entre el millor i el
+ * pitjor sigui tan gran com la que hi ha entre dos alumnes qualssevol.
+ *
+ * @returns {{pct:number|null, mean:number, perGroup:number[], spread:number}|null}
+ */
+function levelStats(groups, levels, perGroup) {
+  if (!levels || !groups.length) return null;
+  const known = [];
+  const means = groups.map((group, index) => {
+    const values = group.map(id => levels[id]).filter(Number.isFinite);
+    values.forEach(value => known.push(value));
+    const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    if (perGroup[index]) perGroup[index].levelMean = mean;
+    return mean;
+  });
+  const filled = means.filter(mean => mean !== null);
+  if (known.length < 2 || !filled.length) return null;
+  const range = Math.max(...known) - Math.min(...known);
+  const spread = Math.max(...filled) - Math.min(...filled);
+  return {
+    mean: known.reduce((sum, value) => sum + value, 0) / known.length,
+    perGroup: means,
+    spread,
+    pct: range > 0 ? Math.max(0, Math.round((1 - spread / range) * 100)) : 100
+  };
+}
+
 /** Mitjana dels indicadors d'equilibri, o `null` si no n'hi ha cap. */
 function balanceAverage(balance) {
   const list = (balance || []).filter(entry => entry.pct !== null);
@@ -1030,16 +1206,21 @@ function mutualLabel(count) {
   return `${pluralize(count, 'parella', 'parelles')} recípro${count === 1 ? 'ca' : 'ques'}`;
 }
 
-/** Classe de color segons les preferències acomplertes. */
-function matchTone(met, total) {
+/**
+ * Classe de color segons les preferències acomplertes. Amb el criteri d'una
+ * tria per alumne, coincidir amb més d'una no és millor: només n'hi ha prou
+ * amb una.
+ */
+function matchTone(met, total, criterion) {
   if (!total) return 'none';
+  if (criterion === 'spread') return met === 1 ? 'good' : met > 1 ? 'medium' : 'bad';
   if (met >= total) return 'good';
   return met > 0 ? 'medium' : 'bad';
 }
 
-function matchChip(entry, name) {
+function matchChip(entry, name, criterion) {
   if (!entry) return '';
-  const tone = matchTone(entry.met, entry.total);
+  const tone = matchTone(entry.met, entry.total, criterion);
   const label = entry.total ? `${entry.met}/${entry.total}` : '—';
   const title = !entry.total
     ? `${name}: no va indicar cap preferència`
@@ -1078,24 +1259,27 @@ function pctTone(pct) {
  * @returns {Array<{label:string, pct:number|null, meta:string, main:boolean}>}
  */
 function criteriaList(stats) {
+  const spread = stats.criterion === 'spread';
   const rows = [];
-  if (stats.total) {
+  // Amb el criteri d'una tria per alumne, el percentatge de tries acomplertes
+  // no vol dir res: acomplir-ne més seria pitjor, no millor.
+  if (stats.total && !spread) {
     rows.push({
       key: 'prefs',
       label: 'Preferències acomplertes',
       pct: stats.pct,
       meta: `${stats.met} de ${stats.total} tries · ${mutualLabel(stats.mutual)}`,
-      main: stats.criterion !== 'spread'
+      main: true
     });
   }
-  if (stats.answered) {
+  if (stats.answered && spread) {
     rows.push({
       key: 'alone',
       label: 'Amb una sola tria acomplerta',
       pct: stats.alonePct,
       meta: [`${stats.alone} amb una`, `${stats.crowded} amb més d'una`,
              `${stats.unhappy} sense cap`].join(' · '),
-      main: stats.criterion === 'spread'
+      main: true
     });
   }
   if (stats.avoidTotal) {
@@ -1116,6 +1300,15 @@ function criteriaList(stats) {
       main: false
     });
   });
+  if (stats.levels) {
+    rows.push({
+      key: 'balance:level',
+      label: `Equilibri · ${LEVEL.label}`,
+      pct: stats.levels.pct,
+      meta: `nivell mitjà ${stats.levels.mean.toFixed(1)} · ${stats.levels.spread.toFixed(1)} punts entre el més alt i el més baix`,
+      main: false
+    });
+  }
   return rows;
 }
 
@@ -1147,12 +1340,18 @@ function storedPreferences() { return A.getTeams().preferences || null; }
 /** El detall dels criteris queda obert o tancat entre repintades del panell. */
 let criteriaOpen = false;
 
-/** Opcions amb què s'han de comptar els indicadors d'unes preferències desades. */
+/**
+ * Opcions amb què s'han de comptar els indicadors d'unes preferències desades.
+ * El nivell de competència el mana el panell d'equips, que és on el docent el
+ * pot retocar després d'importar el full.
+ */
 function statsOptions(stored, extra = {}) {
+  const teams = A.getTeams();
   return {
     avoid: stored.avoid,
     attributes: stored.attributes,
     criterion: stored.criterion,
+    levels: teams.useCompetency ? teams.competencies : null,
     ...extra
   };
 }
@@ -1183,19 +1382,34 @@ function preferenceTeamView(groups) {
         ${criteriaHtml(stats)}
       </details>` : ''}`,
     composition: index => compositionHtml(stats.perGroup[index]),
-    group: index => {
-      const entry = stats.perGroup[index];
-      if (!entry) return '';
-      const broken = entry.avoidBroken
-        ? `<span class="pref-chip pref-avoid" title="${esc(`${separationLabel(entry.avoidBroken)} sense respectar en aquest equip`)}"><span class="mi mi-xs">person_off</span>${entry.avoidBroken}</span>`
-        : '';
-      if (entry.pct === null) return broken;
-      return `<span class="pref-chip pref-${entry.pct >= 75 ? 'good' : entry.pct >= 40 ? 'medium' : 'bad'}"
-        title="${esc(`${entry.met} de ${entry.total} preferències de l'equip`)}">${entry.pct}%</span>${broken}`;
-    },
-    member: id => matchChip(stats.perStudent[id], A.studentName(id)) +
+    group: index => groupChip(stats, index) + brokenChip(stats.perGroup[index]),
+    member: id => matchChip(stats.perStudent[id], A.studentName(id), stats.criterion) +
       avoidChip(stats.perStudent[id], A.studentName(id), A.studentName)
   };
+}
+
+/** Avís de les separacions trencades d'un equip. */
+function brokenChip(entry) {
+  if (!entry?.avoidBroken) return '';
+  return `<span class="pref-chip pref-avoid" title="${esc(`${separationLabel(entry.avoidBroken)} sense respectar en aquest equip`)}"><span class="mi mi-xs">person_off</span>${entry.avoidBroken}</span>`;
+}
+
+/**
+ * Xifra que encapçala cada equip: el percentatge de tries acomplertes o, amb el
+ * criteri d'una tria per alumne, quants membres en tenen exactament una.
+ */
+function groupChip(stats, index) {
+  const entry = stats.perGroup[index];
+  if (!entry) return '';
+  if (stats.criterion === 'spread') {
+    if (!entry.answered) return '';
+    const title = `${entry.alone} de ${entry.answered} membres amb una sola tria acomplerta` +
+      (entry.crowded ? ` · ${entry.crowded} amb més d'una` : '');
+    return `<span class="pref-chip pref-${pctTone(entry.alonePct)}" title="${esc(title)}">${entry.alone}/${entry.answered}</span>`;
+  }
+  if (entry.pct === null) return '';
+  return `<span class="pref-chip pref-${pctTone(entry.pct)}"
+    title="${esc(`${entry.met} de ${entry.total} preferències de l'equip`)}">${entry.pct}%</span>`;
 }
 
 /* ── Secció del panell d'equips ──────────────────────── */
@@ -1319,12 +1533,13 @@ function newWizard() {
   ATTRIBUTE_KEYS.forEach(key => { balance[key] = true; });
   const attrs = {};
   ATTRIBUTE_KEYS.forEach(key => { attrs[key] = -1; });
+  balance.level = true;
   return {
     step: 1, text: '', source: '', rows: [], hasHeader: true,
-    mapping: { name: -1, prefs: [-1, -1, -1], avoid: [], attrs },
+    mapping: { name: -1, prefs: [-1, -1, -1], avoid: [], attrs, level: -1 },
     entries: [], duplicates: 0, nameless: 0, match: null,
     rosterMode: 'merge', newConfigName: '', roster: [], prefs: {}, avoid: {}, unresolved: [],
-    attributes: {}, balance, criterion: 'max',
+    attributes: {}, levels: {}, levelRange: { min: null, max: null }, balance, criterion: 'max',
     plan: { mode: 'count', count: 4, size: 4, remainder: 'balanced' },
     ranked: true, useConstraints: true, useAvoid: true,
     proposal: null, best: null, attempts: 0, picked: null, fromStored: false
@@ -1344,6 +1559,8 @@ function startWizard(options = {}) {
     W.prefs = stored.prefs;
     W.avoid = stored.avoid || {};
     W.attributes = stored.attributes || {};
+    W.levels = stored.levels || {};
+    W.levelRange = { ...(stored.levelRange || { min: null, max: null }) };
     W.balance = { ...W.balance, ...(stored.balance || {}) };
     W.criterion = stored.criterion === 'spread' ? 'spread' : 'max';
     W.unresolved = (stored.unresolved || []).map(name => ({ name, count: 1, ambiguous: false }));
@@ -1542,7 +1759,20 @@ function stepColumns() {
         ${labels.map((_, index) => option(index, selected)).join('')}
       </select>
       ${values.length ? `<span class="pref-field-note">${pluralize(values.length, 'valor')}: ${esc(sample)}</span>` : ''}</div>`;
-  }).join('');
+  }).join('') + (() => {
+    const selected = W.mapping.level;
+    const numbers = selected >= 0
+      ? columnValues(W.rows, W.hasHeader, selected).map(numberOf).filter(value => value !== null)
+      : [];
+    return `<div class="field"><label>${esc(LEVEL.label)} (valor numèric)</label>
+      <select data-change="prefSetColumn" data-role="level">
+        <option value="-1"${selected < 0 ? ' selected' : ''}>— cap —</option>
+        ${labels.map((_, index) => option(index, selected)).join('')}
+      </select>
+      ${numbers.length
+        ? `<span class="pref-field-note">${pluralize(numbers.length, 'valor')} de ${Math.min(...numbers)} a ${Math.max(...numbers)}</span>`
+        : selected >= 0 ? '<span class="pref-field-note pref-bad">cap número en aquesta columna</span>' : ''}</div>`;
+  })();
 
   return wizardShell(`
     <p class="modal-note">${pluralize(rows.length, 'fila', 'files')} de dades i ${pluralize(labels.length, 'columna', 'columnes')}.
@@ -1567,8 +1797,10 @@ function stepColumns() {
       : ''}
     <p class="modal-note" style="margin-top:12px">Si el full porta altres dades de l'alumnat, digues quina columna
       conté cadascuna: el <b>grup d'origen</b> (lletres o paraules com ara «aire», «terra», «aigua»...),
-      el <b>sexe</b> i les <b>necessitats educatives</b> (normalment una «S»). Els equips es formaran
-      repartint-les de manera equilibrada. Les que no hi siguin, deixa-les en «cap».</p>
+      el <b>sexe</b>, les <b>necessitats educatives</b> (normalment una «S») i la <b>competència</b>
+      (un número). Les tres primeres es reparteixen entre els equips; amb la competència s'igualen
+      els nivells mitjans, que és el que fa els grups heterogenis. Les que no hi siguin,
+      deixa-les en «cap».</p>
     <div class="pref-grid">${attrRows}</div>
     <div class="pref-preview"><table>
       <thead><tr>${labels.map((label, index) =>
@@ -1584,6 +1816,7 @@ function setColumn(role, position, value, key) {
   if (role === 'name') W.mapping.name = index;
   else if (role === 'avoid') W.mapping.avoid[position] = index;
   else if (role === 'attr') W.mapping.attrs[key] = index;
+  else if (role === 'level') W.mapping.level = index;
   else W.mapping.prefs[position] = index;
   renderWizard();
 }
@@ -1605,6 +1838,8 @@ function columnsNext() {
     if (index === W.mapping.name || taken.has(index)) W.mapping.attrs[key] = -1;
     else if (index >= 0) taken.add(index);
   });
+  if (W.mapping.level === W.mapping.name || taken.has(W.mapping.level)) W.mapping.level = -1;
+  else if (W.mapping.level >= 0) taken.add(W.mapping.level);
   W.mapping.avoid = W.mapping.avoid.map(index =>
     (index === W.mapping.name || taken.has(index) ? -1 : index));
   W.mapping.avoid.filter(index => index >= 0).forEach(index => taken.add(index));
@@ -1634,6 +1869,11 @@ function refreshRoster() {
   W.prefs = result.prefs;
   W.avoid = result.avoid;
   W.attributes = buildAttributes(W.entries, W.roster);
+  const levels = buildLevels(W.entries, W.roster);
+  W.levels = levels.values;
+  // L'interval que es proposa és el del full; el docent el pot ajustar si
+  // l'escala amb què ha avaluat arriba més amunt o més avall.
+  W.levelRange = { min: levels.min, max: levels.max };
   W.unresolved = result.unresolved;
   W.plan.count = Math.min(W.plan.count || defaultTeamCount(W.roster.length), Math.max(1, W.roster.length));
 }
@@ -1678,14 +1918,18 @@ function stepStudents() {
     ${separations ? `<div class="pref-card"><b>${separations}</b><span>peticions de separació</span></div>` : ''}
   </div>`;
 
-  // Què s'ha llegit de les columnes de grup d'origen, sexe i necessitats.
+  // Què s'ha llegit de les columnes de grup d'origen, sexe, necessitats i competència.
   const loaded = activeAttributes(W.attributes);
-  const attributesBox = loaded.length
+  const levelCount = Object.keys(W.levels).length;
+  const details = loaded.map(item =>
+    `${esc(item.attribute.label)}: ${esc(item.values.map(value => `${value.label} (${value.total})`).join(', '))}`);
+  if (levelCount) {
+    details.push(`${esc(LEVEL.label)}: ${pluralize(levelCount, 'valor')} de ${W.levelRange.min} a ${W.levelRange.max}`);
+  }
+  const attributesBox = details.length
     ? `<div class="pref-note"><span class="mi mi-xs">tune</span>
         <div><b>Dades per equilibrar els equips</b>
-        <div class="pref-note-meta">${loaded.map(item =>
-          `${esc(item.attribute.label)}: ${esc(item.values.map(value => `${value.label} (${value.total})`).join(', '))}`)
-          .join(' · ')}</div></div></div>`
+        <div class="pref-note-meta">${details.join(' · ')}</div></div></div>`
     : '';
 
   const warnings = [];
@@ -1770,6 +2014,11 @@ function currentAvoid() {
   return W.useAvoid === false ? {} : W.avoid;
 }
 
+/** Competències del full a l'escala del panell, o `null` si no n'hi ha. */
+function currentLevels() {
+  return Object.keys(W.levels || {}).length ? scaleLevels(W.levels, W.levelRange) : null;
+}
+
 function stepPlan() {
   const total = W.roster.length;
   const plan = planPreferenceSizes(total, W.plan);
@@ -1791,6 +2040,24 @@ function stepPlan() {
         <span class="pref-toggle-meta">${esc(detail)}</span></span>
     </label>`;
   }).join('');
+
+  // Competència: l'interval del full es pot ajustar, perquè és el que decideix
+  // com es converteixen els valors a l'escala 0–10 del panell d'equips.
+  const levelCount = Object.keys(W.levels).length;
+  const levelBox = levelCount ? `
+    <label class="equips-toggle">
+      <input type="checkbox" ${W.balance.level !== false ? 'checked' : ''} data-change="prefToggleBalance" data-key="level">
+      <span>Igualar el nivell mitjà dels equips (grups heterogenis)
+        <span class="pref-toggle-meta">${pluralize(levelCount, 'valor')} llegits</span></span>
+    </label>
+    <div class="pref-grid">
+      <div class="field"><label>Mínim de l'escala</label>
+        <input type="number" step="any" value="${esc(W.levelRange.min ?? '')}" data-change="prefSetLevelRange" data-key="min"></div>
+      <div class="field"><label>Màxim de l'escala</label>
+        <input type="number" step="any" value="${esc(W.levelRange.max ?? '')}" data-change="prefSetLevelRange" data-key="max"></div>
+    </div>
+    <p class="modal-note">Aquests dos valors es converteixen en el <b>0</b> i el <b>10</b> del
+      nivell de competència del panell d'equips, que s'omplirà en carregar la proposta.</p>` : '';
 
   const remainderBox = plan.remainder > 0 ? `
     <div class="equips-remaining">
@@ -1836,6 +2103,7 @@ function stepPlan() {
       <span>Respectar les ${separationLabel(separations)} demanades al full</span>
     </label>` : ''}
     ${balanceToggles}
+    ${levelBox}
     ${hasConstraints ? `<label class="equips-toggle">
       <input type="checkbox" ${W.useConstraints ? 'checked' : ''} data-change="prefToggleConstraints">
       <span>Respectar els conjunts d'ajuntar i separar (${constraintCount() || 0})</span>
@@ -1847,6 +2115,15 @@ function stepPlan() {
 function setPlanMode(mode) {
   W.plan.mode = mode;
   W.plan.remainder = 'balanced';
+  renderWizard();
+}
+
+/** Extrems de l'escala de competència, sense deixar que es creuin. */
+function setLevelRange(key, value) {
+  const number = numberOf(value);
+  W.levelRange[key] = number;
+  const { min, max } = W.levelRange;
+  if (min !== null && max !== null && min > max) W.levelRange[key === 'min' ? 'max' : 'min'] = number;
   renderWizard();
 }
 
@@ -1873,6 +2150,7 @@ function generateProposal(newSeed) {
     constraints: currentConstraints(),
     attributes: W.attributes,
     balance: W.balance,
+    levels: W.balance.level === false ? null : currentLevels(),
     criterion: W.criterion,
     seed
   });
@@ -1901,6 +2179,7 @@ function rateProposal(proposal) {
     leftover: proposal.leftover,
     avoid: W.avoid,
     attributes: W.attributes,
+    levels: currentLevels(),
     criterion: W.criterion
   });
   return proposal;
@@ -2045,7 +2324,7 @@ initProposalDragAndDrop();
 
 function memberRowHtml(id, stats) {
   const entry = stats.perStudent[id];
-  const tone = matchTone(entry.met, entry.total);
+  const tone = matchTone(entry.met, entry.total, stats.criterion);
   const detail = [
     entry.metIds.length ? `Amb: ${entry.metIds.map(nameOf).join(', ')}` : '',
     entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : '',
@@ -2115,13 +2394,13 @@ function resultGroupsHtml() {
   const { groups, leftover, stats } = W.proposal;
   const cards = groups.map((group, index) => {
     const entry = stats.perGroup[index];
-    const tone = entry.pct === null ? 'none' : entry.pct >= 75 ? 'good' : entry.pct >= 40 ? 'medium' : 'bad';
+    const level = Number.isFinite(entry.levelMean) ? ` · nivell ${entry.levelMean.toFixed(1)}` : '';
     return `<div class="pref-group" data-team="${index}" data-action="prefDropOn">
       <div class="pref-group-head">
         <b>Equip ${index + 1}</b>
-        <span class="pref-chip pref-${tone}">${entry.pct === null ? '—' : entry.pct + '%'}</span>
+        ${groupChip(stats, index)}
       </div>
-      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}${entry.avoidBroken ? ` · <b class="pref-bad">${separationLabel(entry.avoidBroken)} sense respectar</b>` : ''}</div>
+      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual && stats.criterion !== 'spread' ? ` · ${mutualLabel(entry.mutual)}` : ''}${level}${entry.avoidBroken ? ` · <b class="pref-bad">${separationLabel(entry.avoidBroken)} sense respectar</b>` : ''}</div>
       ${compositionHtml(entry)}
       ${group.map(id => memberRowHtml(id, stats)).join('')}
     </div>`;
@@ -2248,6 +2527,8 @@ function writeProposal() {
     prefs: JSON.parse(JSON.stringify(W.prefs)),
     avoid: JSON.parse(JSON.stringify(W.avoid || {})),
     attributes: JSON.parse(JSON.stringify(W.attributes || {})),
+    levels: JSON.parse(JSON.stringify(W.levels || {})),
+    levelRange: { ...W.levelRange },
     balance: { ...W.balance },
     unresolved: W.unresolved.map(item => item.name),
     // En tornar a proposar amb les mateixes respostes, la millor versio es conserva.
@@ -2260,6 +2541,17 @@ function writeProposal() {
   teams.lockedTeams = {};
   teams.lockedStudents = {};
   teams.activeSaved = null;
+
+  // La competència del full omple el panell de nivells, on el docent la pot
+  // retocar, i deixa marcats els equips heterogenis si s'ha demanat igualar-la.
+  const scaled = currentLevels();
+  if (scaled) {
+    Object.entries(scaled).forEach(([studentId, level]) => {
+      if (valid.has(studentId)) teams.competencies[studentId] = level;
+    });
+    teams.useCompetency = true;
+    teams.heterogeneous = W.balance.level !== false;
+  }
 
   const sizes = groups.map(group => group.length);
   const size = commonSize(sizes);
@@ -2315,6 +2607,7 @@ A.registerActions({
   prefToggleConstraints: node => { W.useConstraints = node.checked; renderWizard(); },
   prefSetCriterion: node => { W.criterion = node.value === 'spread' ? 'spread' : 'max'; renderWizard(); },
   prefToggleBalance: node => { W.balance[node.dataset.key] = node.checked; renderWizard(); },
+  prefSetLevelRange: node => setLevelRange(node.dataset.key, node.value),
   prefToggleCriteria: node => { criteriaOpen = !node.closest('details')?.open; },
   prefGenerate: () => generateProposal(),
   prefGenerateAgain: () => generateProposal(),
@@ -2328,10 +2621,12 @@ Object.assign(A, {
   normalizeNameText, nameKey, buildNameIndex, resolveName,
   looksLikeHeader, autoMapping, columnLabels, emptyColumns, readEntries, matchRoster,
   buildRoster, buildPreferences, buildAttributes, attributeValues, activeAttributes,
+  buildLevels, scaleLevels, numberOf,
   planPreferenceSizes, describeSizes, avoidLinks,
   preferenceWeights, preferenceModel, groupScore, optimizePreferenceGroups,
-  preferenceStats, balanceStats, balanceAverage, matchTone, criteriaList,
-  ATTRIBUTES, ATTRIBUTE_KEYS, attributeByKey,
+  preferenceStats, preferenceStatsOptions: statsOptions,
+  balanceStats, levelStats, balanceAverage, matchTone, criteriaList,
+  ATTRIBUTES, ATTRIBUTE_KEYS, attributeByKey, LEVEL,
   preferenceTeamView, renderPreferencePanel, restoreFormation, startPreferenceWizard: startWizard
 });
 
