@@ -2,9 +2,11 @@
  * AulaMap — Equips per preferències de l'alumnat (sociograma)
  *
  * El docent passa un formulari on cada alumne escriu el seu nom i les persones
- * amb qui voldria treballar. Aquest mòdul llegeix el full de respostes (CSV,
- * TSV o Excel), el concilia amb la llista d'alumnes de la configuració activa i
- * proposa un repartiment que maximitza les preferències acomplertes.
+ * amb qui voldria treballar i, si el formulari ho demana, amb qui preferiria no
+ * coincidir. Aquest mòdul llegeix el full de respostes (CSV, TSV o Excel), el
+ * concilia amb la llista d'alumnes de la configuració activa i proposa un
+ * repartiment que maximitza les preferències acomplertes i, alhora, respecta
+ * tantes peticions de separació com pot.
  *
  * La proposta es pot tornar a generar tantes vegades com calgui i, en aplicar-la,
  * es carrega al panell d'Equips com qualsevol altra formació.
@@ -18,15 +20,23 @@ const { el, esc, uid, toast, pluralize, openModal, closeModal, appConfirm,
 /* ── Constants ───────────────────────────────────────── */
 
 const MAX_PREF_COLUMNS = 6;      // columnes de preferència que es poden mapar
+const MAX_AVOID_COLUMNS = 6;     // columnes de separació que es poden mapar
 const RANK_WEIGHTS = [3, 2, 1];  // pes de la 1a, 2a i 3a tria
 const TAIL_WEIGHT = 1;           // pes de la 4a tria en endavant
 const MUTUAL_BONUS = 2;          // premi quan la tria és recíproca
+// Una petició de separació ha de poder amb qualsevol pila de preferències, però
+// no amb els conjunts que el docent hagi escrit a mà al panell de relacions.
+const AVOID_WEIGHT = 60;
+const PROPOSAL_CLASH_COST = 5;   // punts que resta cada separació trencada
 const CONSTRAINT_WEIGHT = 500;   // ajuntar/separar pesen més que cap preferència
 const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 /** Capçaleres que solen identificar cada mena de columna. */
 const NAME_HINT = /(nom|alumn|estudiant|name|cognom)/i;
 const PREF_HINT = /(prefer|opci|tria|elecc|company|amic|amiga|choice|escull|treballar)/i;
+// "Separar 2", "Amb qui NO vols treballar?", "Millor evitar-ho"... Es comprova
+// abans que PREF_HINT, perquè aquestes capçaleres també en duen les paraules.
+const AVOID_HINT = /(separa|evitar|allunya|apartar|incompatib|conflict|avoid|\bno\b)/i;
 const SKIP_HINT = /(marca.*temps|timestamp|correu|e-?mail|adre|hora|data|^id$|curs|grup|classe|nivell|puntuaci)/i;
 
 /* ── Noms: normalització i cerca ─────────────────────── */
@@ -129,55 +139,74 @@ function looksLikeHeader(rows) {
   if (rows.length < 2) return false;
   return (rows[0] || []).some(cell => {
     const text = String(cell || '');
-    return NAME_HINT.test(text) || PREF_HINT.test(text) || SKIP_HINT.test(text);
+    return NAME_HINT.test(text) || PREF_HINT.test(text) || AVOID_HINT.test(text) || SKIP_HINT.test(text);
   });
 }
 
-/** Proposta de correspondència entre columnes i camps. */
+/**
+ * Proposta de correspondència entre columnes i camps.
+ *
+ * Les columnes de separació només es poden endevinar per la capçalera: sense
+ * capçalera no hi ha manera de distingir-les de les de preferència, i el docent
+ * les assigna a mà al pas de les columnes.
+ */
 function autoMapping(rows, hasHeader) {
   const labels = columnLabels(rows, hasHeader);
   const empty = emptyColumns(rows, hasHeader);
   const usable = labels.map((_, index) => index).filter(index => !empty.has(index));
   const isSkipped = index => hasHeader && SKIP_HINT.test(labels[index]);
+  const isAvoid = index => hasHeader && AVOID_HINT.test(labels[index]);
 
   let name = -1;
   if (hasHeader) {
-    name = usable.find(index => NAME_HINT.test(labels[index]) && !PREF_HINT.test(labels[index]) && !isSkipped(index)) ?? -1;
+    name = usable.find(index => NAME_HINT.test(labels[index]) && !PREF_HINT.test(labels[index]) &&
+      !isAvoid(index) && !isSkipped(index)) ?? -1;
   }
   if (name === -1) {
-    name = usable.find(index => !isSkipped(index) && looksLikeNames(columnValues(rows, hasHeader, index))) ?? -1;
+    name = usable.find(index => !isSkipped(index) && !isAvoid(index) &&
+      looksLikeNames(columnValues(rows, hasHeader, index))) ?? -1;
   }
   if (name === -1) name = usable[0] ?? -1;
 
+  const avoid = usable
+    .filter(index => index !== name && isAvoid(index) && !isSkipped(index))
+    .slice(0, MAX_AVOID_COLUMNS);
+  const free = index => index !== name && !avoid.includes(index);
+
   let prefs = hasHeader
-    ? usable.filter(index => index !== name && PREF_HINT.test(labels[index]))
+    ? usable.filter(index => free(index) && PREF_HINT.test(labels[index]))
     : [];
   if (!prefs.length) {
-    prefs = usable.filter(index => index !== name && !isSkipped(index) &&
+    prefs = usable.filter(index => free(index) && !isSkipped(index) &&
       looksLikeNames(columnValues(rows, hasHeader, index)));
   }
   prefs = prefs.slice(0, MAX_PREF_COLUMNS);
   while (prefs.length < 3) prefs.push(-1);
-  return { name, prefs };
+  return { name, prefs, avoid };
 }
 
 /**
  * Files del full convertides a respostes.
  * Si algú respon dues vegades, es queda la resposta més nova.
- * @returns {{entries:Array<{name:string,choices:string[]}>, duplicates:number, nameless:number}}
+ * @returns {{entries:Array<{name:string,choices:string[],avoid:string[]}>,
+ *            duplicates:number, nameless:number}}
  */
 function readEntries(rows, hasHeader, mapping) {
   const seen = new Map();
   const entries = [];
   let duplicates = 0;
   let nameless = 0;
+  // Les columnes de separació es llegeixen igual que les de preferència: un nom
+  // per cel·la. `mapping.avoid` pot no existir en fulls sense separacions.
+  const cells = (row, columns) => (columns || []).filter(index => index >= 0)
+    .map(index => String(row[index] || '').trim())
+    .filter(Boolean);
   dataRowsOf(rows, hasHeader).forEach(row => {
     const name = String(row[mapping.name] || '').trim();
-    const choices = mapping.prefs.filter(index => index >= 0)
-      .map(index => String(row[index] || '').trim())
-      .filter(Boolean);
+    const choices = cells(row, mapping.prefs);
+    const avoid = cells(row, mapping.avoid);
     if (!name) {
-      if (choices.length) nameless++;
+      if (choices.length || avoid.length) nameless++;
       return;
     }
     const key = nameKey(name);
@@ -186,9 +215,10 @@ function readEntries(rows, hasHeader, mapping) {
       duplicates++;
       previous.name = name;
       if (choices.length) previous.choices = choices;
+      if (avoid.length) previous.avoid = avoid;
       return;
     }
-    const entry = { name, choices, studentId: null };
+    const entry = { name, choices, avoid, studentId: null };
     seen.set(key, entry);
     entries.push(entry);
   });
@@ -247,31 +277,47 @@ function buildRoster(mode, match, students, entries) {
 }
 
 /**
- * Tries convertides a identificadors d'alumne.
- * @returns {{prefs:Object<string,string[]>, unresolved:Array<{name:string,count:number,ambiguous:boolean}>}}
+ * Tries i peticions de separació convertides a identificadors d'alumne.
+ *
+ * Si algú surt a les dues llistes (passa quan el formulari té una pregunta mal
+ * entesa), mana la separació: val més deixar de complir un desig que ajuntar
+ * dues persones que han demanat de no estar juntes.
+ *
+ * @returns {{prefs:Object<string,string[]>, avoid:Object<string,string[]>,
+ *            unresolved:Array<{name:string,count:number,ambiguous:boolean}>}}
  */
 function buildPreferences(entries, roster) {
   const index = buildNameIndex(roster);
   const ids = new Set(roster.map(student => student.id));
   const prefs = {};
+  const avoid = {};
   const unresolved = new Map();
-  entries.forEach(entry => {
-    if (!entry.studentId || !ids.has(entry.studentId)) return;
+
+  const resolveList = (names, selfId) => {
     const list = [];
-    entry.choices.forEach(choice => {
-      const { student, ambiguous } = resolveName(choice, index);
+    (names || []).forEach(name => {
+      const { student, ambiguous } = resolveName(name, index);
       if (student && ids.has(student.id)) {
-        if (student.id !== entry.studentId && !list.includes(student.id)) list.push(student.id);
+        if (student.id !== selfId && !list.includes(student.id)) list.push(student.id);
         return;
       }
-      const key = nameKey(choice);
+      const key = nameKey(name);
       const found = unresolved.get(key);
       if (found) found.count++;
-      else unresolved.set(key, { name: choice, count: 1, ambiguous });
+      else unresolved.set(key, { name, count: 1, ambiguous });
     });
+    return list;
+  };
+
+  entries.forEach(entry => {
+    if (!entry.studentId || !ids.has(entry.studentId)) return;
+    const wanted = resolveList(entry.choices, entry.studentId);
+    const rejected = resolveList(entry.avoid, entry.studentId);
+    const list = rejected.length ? wanted.filter(id => !rejected.includes(id)) : wanted;
     if (list.length) prefs[entry.studentId] = list;
+    if (rejected.length) avoid[entry.studentId] = rejected;
   });
-  return { prefs, unresolved: [...unresolved.values()].sort((a, b) => b.count - a.count) };
+  return { prefs, avoid, unresolved: [...unresolved.values()].sort((a, b) => b.count - a.count) };
 }
 
 /* ── Mides dels equips ───────────────────────────────── */
@@ -333,6 +379,7 @@ function describeSizes(sizes, leftover) {
  */
 function preferenceWeights(ids, prefs, options = {}) {
   const ranked = options.ranked !== false;
+  const avoid = options.avoid || {};
   const index = new Map(ids.map((id, position) => [id, position]));
   const weights = ids.map(() => new Array(ids.length).fill(0));
 
@@ -349,6 +396,12 @@ function preferenceWeights(ids, prefs, options = {}) {
       add(studentId, targetId, ranked ? (RANK_WEIGHTS[rank] ?? TAIL_WEIGHT) : 1);
       if ((prefs[targetId] || []).includes(studentId)) add(studentId, targetId, MUTUAL_BONUS / 2);
     });
+  });
+
+  // Totes les separacions pesen igual: qui és el primer de la llista i qui el
+  // segon no fa cap diferència quan es demana no coincidir.
+  Object.entries(avoid).forEach(([studentId, list]) => {
+    (list || []).forEach(targetId => add(studentId, targetId, -AVOID_WEIGHT));
   });
 
   const constraints = options.constraints;
@@ -471,7 +524,7 @@ function improveAssignment(groups, model, realGroups, rounds) {
  * amb intercanvis fins que no millora. Per a una classe sencera el càlcul dura
  * mil·lisegons i el resultat sol ser òptim o molt a prop.
  *
- * @param {{ids:string[], prefs:Object, sizes:number[], leftover?:number,
+ * @param {{ids:string[], prefs:Object, avoid?:Object, sizes:number[], leftover?:number,
  *          ranked?:boolean, constraints?:Object, seed?:number, restarts?:number}} options
  * @returns {{groups:string[][], leftover:string[], score:number}}
  */
@@ -481,6 +534,7 @@ function optimizePreferenceGroups(options) {
   const leftoverSize = Math.max(0, options.leftover || 0);
   const model = preferenceWeights(ids, options.prefs || {}, {
     ranked: options.ranked !== false,
+    avoid: options.avoid,
     constraints: options.constraints
   });
   if (!ids.length || !sizes.length) return { groups: sizes.map(() => []), leftover: ids, score: 0 };
@@ -512,39 +566,55 @@ function optimizePreferenceGroups(options) {
 /* ── Indicadors ──────────────────────────────────────── */
 
 /**
- * Preferències acomplertes per alumne, per equip i en conjunt. Només es
- * compten les tries d'alumnes que participen en el repartiment.
+ * Preferències acomplertes i separacions respectades, per alumne, per equip i
+ * en conjunt. Només es compten les tries d'alumnes que participen en el
+ * repartiment. Qui es queda sense equip no comparteix taula amb ningú: cap
+ * preferència seva es dóna per acomplerta, ni cap separació per trencada.
+ *
  * @returns {{met:number, total:number, pct:number|null, perStudent:Object,
- *            perGroup:Array, answered:number, unhappy:number, mutual:number}}
+ *            perGroup:Array, answered:number, unhappy:number, mutual:number,
+ *            avoidKept:number, avoidTotal:number, avoidBroken:number,
+ *            avoidPct:number|null, clashes:Array<[string,string]>}}
  */
 function preferenceStats(groups, prefs, options = {}) {
+  const avoid = options.avoid || {};
   const teamOf = new Map();
   groups.forEach((group, index) => group.forEach(id => teamOf.set(id, index)));
   (options.leftover || []).forEach(id => { if (!teamOf.has(id)) teamOf.set(id, -1); });
 
   const placed = new Set(teamOf.keys());
   const perStudent = {};
-  const perGroup = groups.map(() => ({ met: 0, total: 0, pct: null, mutual: 0 }));
+  const perGroup = groups.map(() => ({ met: 0, total: 0, pct: null, mutual: 0, avoidBroken: 0 }));
   let met = 0;
   let total = 0;
   let answered = 0;
   let unhappy = 0;
   let mutual = 0;
+  let avoidTotal = 0;
+  let avoidBroken = 0;
+  const clashes = [];
 
   placed.forEach(id => {
     const index = teamOf.get(id);
     const list = (prefs[id] || []).filter(other => placed.has(other) && other !== id);
     const metIds = index >= 0 ? list.filter(other => teamOf.get(other) === index) : [];
     const missIds = list.filter(other => !metIds.includes(other));
+    const away = (avoid[id] || []).filter(other => placed.has(other) && other !== id);
+    const clashIds = index >= 0 ? away.filter(other => teamOf.get(other) === index) : [];
     perStudent[id] = {
       met: metIds.length,
       total: list.length,
       metIds,
       missIds,
-      first: list.length ? metIds.includes(list[0]) : false
+      first: list.length ? metIds.includes(list[0]) : false,
+      avoidTotal: away.length,
+      avoidBroken: clashIds.length,
+      avoidIds: clashIds
     };
     met += metIds.length;
     total += list.length;
+    avoidTotal += away.length;
+    avoidBroken += clashIds.length;
     if (list.length) {
       answered++;
       if (!metIds.length) unhappy++;
@@ -552,17 +622,50 @@ function preferenceStats(groups, prefs, options = {}) {
     if (index >= 0) {
       perGroup[index].met += metIds.length;
       perGroup[index].total += list.length;
+      perGroup[index].avoidBroken += clashIds.length;
       metIds.forEach(other => {
         if ((prefs[other] || []).includes(id) && id < other) { mutual++; perGroup[index].mutual++; }
+      });
+      // Una parella junta surt una sola vegada a la llista, tant si la separació
+      // l'ha demanada una de les dues persones com totes dues.
+      clashIds.forEach(other => {
+        if (id < other || !(avoid[other] || []).includes(id)) clashes.push([id, other]);
       });
     }
   });
 
   perGroup.forEach(entry => { entry.pct = entry.total ? Math.round(entry.met * 100 / entry.total) : null; });
+  const avoidKept = avoidTotal - avoidBroken;
   return {
     met, total, answered, unhappy, mutual, perStudent, perGroup,
+    avoidKept, avoidTotal, avoidBroken, clashes,
+    avoidPct: avoidTotal ? Math.round(avoidKept * 100 / avoidTotal) : null,
     pct: total ? Math.round(met * 100 / total) : null
   };
+}
+
+/**
+ * Qualitat comparable de dues formacions: el percentatge de preferències
+ * acomplertes, descomptant cada separació trencada. Una separació sense
+ * respectar es paga cara, però no tant com per acceptar qualsevol repartiment.
+ */
+function proposalQuality(stats) {
+  return (stats.pct || 0) - (stats.avoidBroken || 0) * PROPOSAL_CLASH_COST;
+}
+
+/** El mateix, per a la millor formació desada, que només en guarda el recompte. */
+function storedQuality(best) {
+  return (best.pct || 0) - (best.broken || 0) * PROPOSAL_CLASH_COST;
+}
+
+/** "3 separacions" / "1 separació". */
+function separationLabel(count) {
+  return `${count} ${count === 1 ? 'separació' : 'separacions'}`;
+}
+
+/** "2 de 3 separacions respectades" amb la concordança correcta. */
+function separationsKept(kept, total) {
+  return `${kept} de ${separationLabel(total)} respectad${total === 1 ? 'a' : 'es'}`;
 }
 
 /** "3 parelles recíproques" amb la concordança correcta. */
@@ -590,6 +693,14 @@ function matchChip(entry, name) {
   return `<span class="pref-chip pref-${tone}" title="${esc(title)}">${esc(label)}</span>`;
 }
 
+/** Avís de l'alumne que ha acabat amb algú de qui demanava separar-se. */
+function avoidChip(entry, name, nameFor) {
+  if (!entry || !entry.avoidBroken) return '';
+  const names = entry.avoidIds.map(nameFor).join(', ');
+  const title = `${name}: comparteix equip amb ${names}, que havia demanat de separar`;
+  return `<span class="pref-chip pref-avoid" title="${esc(title)}"><span class="mi mi-xs">person_off</span>${entry.avoidBroken}</span>`;
+}
+
 function matchBar(pct) {
   const value = pct === null ? 0 : pct;
   const tone = pct === null ? 'none' : (pct >= 75 ? 'good' : pct >= 40 ? 'medium' : 'bad');
@@ -605,25 +716,40 @@ function storedPreferences() { return A.getTeams().preferences || null; }
 function preferenceTeamView(groups) {
   const stored = storedPreferences();
   if (!stored || !groups || !groups.length) return null;
-  const stats = preferenceStats(groups, stored.prefs);
-  if (!stats.total) return null;
+  const stats = preferenceStats(groups, stored.prefs, { avoid: stored.avoid });
+  if (!stats.total && !stats.avoidTotal) return null;
+  const meta = [];
+  if (stats.total) meta.push(`${stats.met} de ${stats.total} tries`, mutualLabel(stats.mutual));
+  if (stats.unhappy) meta.push(`${stats.unhappy} sense cap tria acomplerta`);
+  if (stats.avoidTotal) {
+    meta.push(separationsKept(stats.avoidKept, stats.avoidTotal));
+  }
+  // Sense cap tria indicada, el titular passa a ser el de les separacions.
+  const headline = stats.total
+    ? { label: 'Preferències acomplertes', pct: stats.pct, tone: matchTone(stats.met, stats.total) }
+    : { label: 'Separacions respectades', pct: stats.avoidPct, tone: matchTone(stats.avoidKept, stats.avoidTotal) };
   return {
     stats,
     summary: `<div class="pref-summary">
         <div class="pref-summary-head">
-          <span><span class="mi mi-xs">diversity_3</span> Preferències acomplertes</span>
-          <b class="pref-${matchTone(stats.met, stats.total)}">${stats.pct}%</b>
+          <span><span class="mi mi-xs">diversity_3</span> ${headline.label}</span>
+          <b class="pref-${headline.tone}">${headline.pct}%</b>
         </div>
-        ${matchBar(stats.pct)}
-        <div class="pref-summary-meta">${stats.met} de ${stats.total} tries · ${mutualLabel(stats.mutual)}${stats.unhappy ? ` · ${stats.unhappy} sense cap tria acomplerta` : ''}</div>
+        ${matchBar(headline.pct)}
+        <div class="pref-summary-meta">${meta.join(' · ')}</div>
       </div>`,
     group: index => {
       const entry = stats.perGroup[index];
-      if (!entry || entry.pct === null) return '';
+      if (!entry) return '';
+      const broken = entry.avoidBroken
+        ? `<span class="pref-chip pref-avoid" title="${esc(`${separationLabel(entry.avoidBroken)} sense respectar en aquest equip`)}"><span class="mi mi-xs">person_off</span>${entry.avoidBroken}</span>`
+        : '';
+      if (entry.pct === null) return broken;
       return `<span class="pref-chip pref-${entry.pct >= 75 ? 'good' : entry.pct >= 40 ? 'medium' : 'bad'}"
-        title="${esc(`${entry.met} de ${entry.total} preferències de l'equip`)}">${entry.pct}%</span>`;
+        title="${esc(`${entry.met} de ${entry.total} preferències de l'equip`)}">${entry.pct}%</span>${broken}`;
     },
-    member: id => matchChip(stats.perStudent[id], A.studentName(id))
+    member: id => matchChip(stats.perStudent[id], A.studentName(id)) +
+      avoidChip(stats.perStudent[id], A.studentName(id), A.studentName)
   };
 }
 
@@ -635,12 +761,13 @@ function preferenceTeamView(groups) {
  * acomplertes es guarda per poder-hi tornar.
  */
 function rememberFormation(teams, stats) {
-  if (!stats || !stats.total || !teams.groups?.length) return;
+  if (!stats || (!stats.total && !stats.avoidTotal) || !teams.groups?.length) return;
   const best = teams.preferences.best;
-  if (best && stats.pct <= best.pct) return;
+  if (best && proposalQuality(stats) <= storedQuality(best)) return;
   teams.preferences.best = {
     groups: teams.groups.map(group => group.slice()),
-    pct: stats.pct,
+    pct: stats.pct === null ? 0 : stats.pct,
+    broken: stats.avoidBroken,
     updated: formattedNow()
   };
   A.saveState();
@@ -680,36 +807,38 @@ function renderPreferencePanel() {
   if (!box) return;
   const stored = storedPreferences();
   if (!stored) {
-    box.innerHTML = `<p class="panel-hint" style="margin-bottom:6px">Carrega el full de respostes del formulari (nom i fins a tres companys) i
-      l'aplicació proposarà els equips que acompleixin més preferències.</p>`;
+    box.innerHTML = `<p class="panel-hint" style="margin-bottom:6px">Carrega el full de respostes del formulari (nom, companys amb qui voldria
+      treballar i, si n'hi ha, columnes de separació) i l'aplicació proposarà els equips que
+      acompleixin més preferències sense ajuntar qui ha demanat de no coincidir.</p>`;
     return;
   }
   const teams = A.getTeams();
-  const answered = Object.keys(stored.prefs).length;
-  const stats = teams.groups?.length ? preferenceStats(teams.groups, stored.prefs) : null;
+  const answered = new Set([...Object.keys(stored.prefs), ...Object.keys(stored.avoid || {})]).size;
+  const stats = teams.groups?.length ? preferenceStats(teams.groups, stored.prefs, { avoid: stored.avoid }) : null;
   const current = stats && stats.total ? stats.pct : null;
   rememberFormation(teams, stats);
 
   const best = stored.best;
-  const canRestore = !!best && (current === null || best.pct > current);
+  const canRestore = !!best && (!stats || storedQuality(best) > proposalQuality(stats));
   box.innerHTML = `<div class="pref-status">
       <div class="pref-status-head">
         <span><span class="mi mi-xs">check_circle</span> ${pluralize(answered, 'resposta', 'respostes')} carregades</span>
         ${current === null ? '' : `<b class="pref-${matchTone(stats.met, stats.total)}">${current}%</b>`}
       </div>
       <div class="pref-status-meta">${esc(stored.source || 'Full de preferències')}${stored.updated ? ` · ${esc(stored.updated)}` : ''}${stored.unresolved?.length ? ` · ${pluralize(stored.unresolved.length, 'nom')} sense identificar` : ''}</div>
+      ${stats && stats.avoidTotal ? `<div class="pref-status-meta pref-${stats.avoidBroken ? 'bad' : 'good'}">${separationsKept(stats.avoidKept, stats.avoidTotal)}</div>` : ''}
       <div class="pref-status-actions">
         <button class="btn btn-sm" data-action="prefRegenerate"><span class="mi mi-xs">auto_awesome</span> Tornar a proposar</button>
         <button class="btn btn-sm btn-danger" data-action="prefForget" title="Esborrar les preferències carregades"><span class="mi mi-xs">delete</span></button>
       </div>
       ${canRestore ? `<button class="btn btn-sm pref-restore" data-action="prefRestoreFormation"
-        title="${esc(`Equips del ${best.updated} amb el ${best.pct}% de preferències acomplertes`)}">
+        title="${esc(`Equips del ${best.updated} amb el ${best.pct}% de preferències acomplertes${best.broken ? ` i ${separationLabel(best.broken)} sense respectar` : ''}`)}">
         <span class="mi mi-xs">history</span> Recuperar la millor versió (${best.pct}%)</button>` : ''}
     </div>`;
 }
 
 function forgetPreferences() {
-  appConfirm('Esborrar les preferències?', 'Els equips ja formats es mantindran, però es perdran els indicadors de preferències.', () => {
+  appConfirm('Esborrar les preferències?', 'Els equips ja formats es mantindran, però es perdran els indicadors de preferències i de separacions.', () => {
     A.saveWithUndo();
     A.getTeams().preferences = null;
     A.saveState();
@@ -735,11 +864,11 @@ function defaultTeamCount(total) {
 function newWizard() {
   return {
     step: 1, text: '', source: '', rows: [], hasHeader: true,
-    mapping: { name: -1, prefs: [-1, -1, -1] },
+    mapping: { name: -1, prefs: [-1, -1, -1], avoid: [] },
     entries: [], duplicates: 0, nameless: 0, match: null,
-    rosterMode: 'merge', newConfigName: '', roster: [], prefs: {}, unresolved: [],
+    rosterMode: 'merge', newConfigName: '', roster: [], prefs: {}, avoid: {}, unresolved: [],
     plan: { mode: 'count', count: 4, size: 4, remainder: 'balanced' },
-    ranked: true, useConstraints: true,
+    ranked: true, useConstraints: true, useAvoid: true,
     proposal: null, best: null, attempts: 0, picked: null, fromStored: false
   };
 }
@@ -755,6 +884,7 @@ function startWizard(options = {}) {
     W.ranked = stored.ranked !== false;
     W.roster = students.map(student => ({ id: student.id, name: student.name, isNew: false }));
     W.prefs = stored.prefs;
+    W.avoid = stored.avoid || {};
     W.unresolved = (stored.unresolved || []).map(name => ({ name, count: 1, ambiguous: false }));
     W.plan.count = defaultTeamCount(W.roster.length);
     W.step = 4;
@@ -799,11 +929,12 @@ function stepSource() {
     <p class="modal-note">Carrega el full amb les respostes de l'alumnat: una fila per alumne, amb el seu nom i
       les persones amb qui voldria treballar. S'accepten fitxers <b>CSV</b>, <b>TSV</b> i <b>Excel</b> (.xlsx),
       i també hi pots enganxar les dades directament des del full de càlcul. Les columnes buides i les
-      respostes incompletes no són cap problema.</p>
+      respostes incompletes no són cap problema. Si el full té columnes de separació
+      («Separar 1», «Amb qui no vols treballar?»...), també es tindran en compte.</p>
     <div class="field"><label>Fitxer</label>
       <input type="file" id="prefFile" accept=".csv,.tsv,.txt,.xlsx,.xls" data-change="prefFileChosen"></div>
     <div class="field"><label>O enganxa-hi les dades</label>
-      <textarea id="prefText" rows="7" style="resize:vertical" placeholder="Nom;Preferència 1;Preferència 2;Preferència 3&#10;Anna Puig;Pau Serra;Nil Roca;Jana Ferrer">${esc(W.text)}</textarea></div>
+      <textarea id="prefText" rows="7" style="resize:vertical" placeholder="Nom;Preferència 1;Preferència 2;Preferència 3;Separar 1&#10;Anna Puig;Pau Serra;Nil Roca;Jana Ferrer;Teo Mas">${esc(W.text)}</textarea></div>
     ${W.rows.length ? `<div class="pref-note"><span class="mi mi-xs">description</span>
       <div>Ja hi ha un full llegit: <b>${esc(W.source || 'dades enganxades')}</b>, ${pluralize(W.rows.length, 'fila', 'files')}.
       Continua per tornar a les columnes, o carrega'n un altre.</div></div>` : ''}`,
@@ -814,10 +945,10 @@ function stepSource() {
 
 function downloadTemplate() {
   const rows = [
-    ['Nom i cognoms', 'Preferència 1', 'Preferència 2', 'Preferència 3'],
-    ['Anna Puig Solà', 'Pau Serra', 'Nil Roca', 'Jana Ferrer'],
-    ['Pau Serra Vidal', 'Anna Puig Solà', 'Nil Roca', ''],
-    ['Nil Roca Camps', 'Pau Serra Vidal', '', '']
+    ['Nom i cognoms', 'Preferència 1', 'Preferència 2', 'Preferència 3', 'Separar 1'],
+    ['Anna Puig Solà', 'Pau Serra', 'Nil Roca', 'Jana Ferrer', ''],
+    ['Pau Serra Vidal', 'Anna Puig Solà', 'Nil Roca', '', 'Jana Ferrer'],
+    ['Nil Roca Camps', 'Pau Serra Vidal', '', '', '']
   ];
   A.downloadBlob(new Blob(['\uFEFF' + A.csvFrom(rows)], { type: 'text/csv;charset=utf-8' }),
                  'aulamap_plantilla_preferencies.csv');
@@ -921,14 +1052,18 @@ function stepColumns() {
       ${labels.map((_, index) => option(index, selected)).join('')}
     </select>`;
 
-  const preview = rows.slice(0, 5).map(row => `<tr>${labels.map((_, index) => {
-    const role = index === W.mapping.name ? ' class="pref-col-name"'
-      : W.mapping.prefs.includes(index) ? ' class="pref-col-pref"' : '';
-    return `<td${role}>${esc(row[index] || '')}</td>`;
-  }).join('')}</tr>`).join('');
+  const roleClass = index => index === W.mapping.name ? ' class="pref-col-name"'
+    : W.mapping.avoid.includes(index) ? ' class="pref-col-avoid"'
+    : W.mapping.prefs.includes(index) ? ' class="pref-col-pref"' : '';
+
+  const preview = rows.slice(0, 5).map(row => `<tr>${labels.map((_, index) =>
+    `<td${roleClass(index)}>${esc(row[index] || '')}</td>`).join('')}</tr>`).join('');
 
   const prefRows = W.mapping.prefs.map((selected, position) => `
     <div class="field"><label>Preferència ${position + 1}</label>${columnSelect('pref', selected, position, true)}</div>`).join('');
+
+  const avoidRows = W.mapping.avoid.map((selected, position) => `
+    <div class="field"><label>Separar ${position + 1}</label>${columnSelect('avoid', selected, position, true)}</div>`).join('');
 
   return wizardShell(`
     <p class="modal-note">${pluralize(rows.length, 'fila', 'files')} de dades i ${pluralize(labels.length, 'columna', 'columnes')}.
@@ -944,12 +1079,16 @@ function stepColumns() {
     ${W.mapping.prefs.length < MAX_PREF_COLUMNS
       ? '<button class="btn btn-sm" data-action="prefAddColumn"><span class="mi mi-xs">add</span> Una preferència més</button>'
       : ''}
+    <p class="modal-note" style="margin-top:12px">Si el full pregunta també amb qui <b>no</b> vol coincidir
+      (columnes de tipus «Separar 1», «Separar 2»...), assigna-les aquí: la proposta mirarà de no
+      posar aquestes persones al mateix equip.</p>
+    ${avoidRows ? `<div class="pref-grid">${avoidRows}</div>` : ''}
+    ${W.mapping.avoid.length < MAX_AVOID_COLUMNS
+      ? `<button class="btn btn-sm" data-action="prefAddAvoidColumn"><span class="mi mi-xs">person_off</span> ${W.mapping.avoid.length ? 'Una separació més' : 'Afegir una columna de separació'}</button>`
+      : ''}
     <div class="pref-preview"><table>
-      <thead><tr>${labels.map((label, index) => {
-        const role = index === W.mapping.name ? ' class="pref-col-name"'
-          : W.mapping.prefs.includes(index) ? ' class="pref-col-pref"' : '';
-        return `<th${role}>${esc(label)}</th>`;
-      }).join('')}</tr></thead>
+      <thead><tr>${labels.map((label, index) =>
+        `<th${roleClass(index)}>${esc(label)}</th>`).join('')}</tr></thead>
       <tbody>${preview}</tbody>
     </table></div>`,
     `<button class="btn" data-action="prefBack" data-step="1"><span class="mi mi-xs">arrow_back</span> Enrere</button>
@@ -959,6 +1098,7 @@ function stepColumns() {
 function setColumn(role, position, value) {
   const index = parseInt(value, 10);
   if (role === 'name') W.mapping.name = index;
+  else if (role === 'avoid') W.mapping.avoid[position] = index;
   else W.mapping.prefs[position] = index;
   renderWizard();
 }
@@ -971,9 +1111,15 @@ function toggleHeader(checked) {
 
 function columnsNext() {
   if (W.mapping.name < 0) { toast('Indica quina columna té el nom', 'error'); return; }
-  const prefs = W.mapping.prefs.filter(index => index >= 0 && index !== W.mapping.name);
-  if (!prefs.length) { toast('Indica com a mínim una columna de preferència', 'error'); return; }
-  W.mapping.prefs = W.mapping.prefs.map(index => (index === W.mapping.name ? -1 : index));
+  // Una columna no pot fer dos papers alhora: la separació mana sobre la
+  // preferència, i cap de les dues pot ser la columna del nom.
+  W.mapping.avoid = W.mapping.avoid.map(index => (index === W.mapping.name ? -1 : index));
+  const taken = new Set(W.mapping.avoid.filter(index => index >= 0));
+  W.mapping.prefs = W.mapping.prefs.map(index =>
+    (index === W.mapping.name || taken.has(index) ? -1 : index));
+
+  const columns = W.mapping.prefs.filter(index => index >= 0).length + taken.size;
+  if (!columns) { toast('Indica com a mínim una columna de preferència o de separació', 'error'); return; }
 
   const read = readEntries(W.rows, W.hasHeader, W.mapping);
   if (!read.entries.length) { toast('No s\'ha trobat cap nom a la columna triada', 'error'); return; }
@@ -987,12 +1133,13 @@ function columnsNext() {
   renderWizard();
 }
 
-/** Recalcula la llista de treball i les preferències segons el mode triat. */
+/** Recalcula la llista de treball, les preferències i les separacions. */
 function refreshRoster() {
   const built = buildRoster(W.rosterMode, W.match, A.getData().students, W.entries);
   W.roster = built.students;
   const result = buildPreferences(W.entries, W.roster);
   W.prefs = result.prefs;
+  W.avoid = result.avoid;
   W.unresolved = result.unresolved;
   W.plan.count = Math.min(W.plan.count || defaultTeamCount(W.roster.length), Math.max(1, W.roster.length));
 }
@@ -1029,10 +1176,12 @@ function stepStudents() {
   const options = rosterModeOptions();
   if (!options.some(option => option[0] === W.rosterMode)) { W.rosterMode = options[0][0]; refreshRoster(); }
 
+  const separations = avoidLinks(W.avoid);
   const cards = `<div class="pref-cards">
     <div class="pref-card"><b>${matched.length}</b><span>coincideixen amb la classe</span></div>
     <div class="pref-card${fresh.length ? ' pref-medium' : ''}"><b>${fresh.length}</b><span>noms nous al full</span></div>
     <div class="pref-card${missing.length ? ' pref-medium' : ''}"><b>${missing.length}</b><span>alumnes sense resposta</span></div>
+    ${separations ? `<div class="pref-card"><b>${separations}</b><span>peticions de separació</span></div>` : ''}
   </div>`;
 
   const warnings = [];
@@ -1106,10 +1255,21 @@ function constraintCount() {
   return constraints[REL_TOGETHER].length + constraints[REL_SEPARATE].length;
 }
 
+/** Nombre de peticions de separació llegides del full. */
+function avoidLinks(avoid) {
+  return Object.values(avoid || {}).reduce((sum, list) => sum + (list || []).length, 0);
+}
+
+/** Separacions que s'apliquen al repartiment: cap si el docent les desactiva. */
+function currentAvoid() {
+  return W.useAvoid === false ? {} : W.avoid;
+}
+
 function stepPlan() {
   const total = W.roster.length;
   const plan = planPreferenceSizes(total, W.plan);
   const withoutPrefs = W.roster.filter(student => !(W.prefs[student.id] || []).length).length;
+  const separations = avoidLinks(W.avoid);
   const teams = A.getTeams();
   const hasConstraints = (teams.constraints[REL_TOGETHER].length + teams.constraints[REL_SEPARATE].length) > 0;
 
@@ -1141,6 +1301,10 @@ function stepPlan() {
       <input type="checkbox" ${W.ranked ? 'checked' : ''} data-change="prefToggleRanked">
       <span>Prioritzar les primeres preferències</span>
     </label>
+    ${separations ? `<label class="equips-toggle">
+      <input type="checkbox" ${W.useAvoid ? 'checked' : ''} data-change="prefToggleAvoid">
+      <span>Respectar les ${separationLabel(separations)} demanades al full</span>
+    </label>` : ''}
     ${hasConstraints ? `<label class="equips-toggle">
       <input type="checkbox" ${W.useConstraints ? 'checked' : ''} data-change="prefToggleConstraints">
       <span>Respectar els conjunts d'ajuntar i separar (${constraintCount() || 0})</span>
@@ -1171,6 +1335,7 @@ function generateProposal(newSeed) {
   const result = optimizePreferenceGroups({
     ids: W.roster.map(student => student.id),
     prefs: W.prefs,
+    avoid: currentAvoid(),
     sizes: plan.sizes,
     leftover: plan.leftover,
     ranked: W.ranked,
@@ -1196,13 +1361,17 @@ function cloneProposal(proposal) {
 
 /** Recompta els indicadors d'una proposta. */
 function rateProposal(proposal) {
-  proposal.stats = preferenceStats(proposal.groups, W.prefs, { leftover: proposal.leftover });
+  // Els indicadors sempre mostren totes les separacions llegides, encara que el
+  // docent hagi decidit no aplicar-les: així es veu què s'està deixant passar.
+  proposal.stats = preferenceStats(proposal.groups, W.prefs,
+    { leftover: proposal.leftover, avoid: W.avoid });
   return proposal;
 }
 
 function keepIfBest() {
-  const current = W.proposal.stats.pct || 0;
-  if (!W.best || current > (W.best.stats.pct || 0)) W.best = cloneProposal(W.proposal);
+  if (!W.best || proposalQuality(W.proposal.stats) > proposalQuality(W.best.stats)) {
+    W.best = cloneProposal(W.proposal);
+  }
 }
 
 function restoreBest() {
@@ -1341,38 +1510,74 @@ function memberRowHtml(id, stats) {
   const tone = matchTone(entry.met, entry.total);
   const detail = [
     entry.metIds.length ? `Amb: ${entry.metIds.map(nameOf).join(', ')}` : '',
-    entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : ''
+    entry.missIds.length ? `Sense: ${entry.missIds.map(nameOf).join(', ')}` : '',
+    entry.avoidIds.length ? `Havia demanat separar-se de: ${entry.avoidIds.map(nameOf).join(', ')}` : ''
   ].filter(Boolean).join(' · ') || 'Sense preferències indicades';
-  return `<div class="pref-member${W.picked === id ? ' pref-picked' : ''}" draggable="true"
+  return `<div class="pref-member${W.picked === id ? ' pref-picked' : ''}${entry.avoidBroken ? ' pref-member-clash' : ''}" draggable="true"
       data-action="prefPick" data-sid="${esc(id)}" title="${esc(detail)}">
       <span class="pref-member-name">${esc(nameOf(id))}</span>
       <span class="pref-chip pref-${tone}">${entry.total ? `${entry.met}/${entry.total}` : '—'}</span>
+      ${avoidChip(entry, nameOf(id), nameOf)}
     </div>`;
+}
+
+/** Avís de les parelles que han acabat juntes tot i haver demanat separar-se. */
+function clashNoteHtml(stats) {
+  if (!stats.avoidBroken) {
+    return stats.avoidTotal
+      ? `<div class="pref-note"><span class="mi mi-xs">check_circle</span>
+          <div>Es respecten ${W.useAvoid === false ? 'igualment ' : ''}totes les ${separationLabel(stats.avoidTotal)} demanades al full.</div></div>`
+      : '';
+  }
+  const pairs = stats.clashes.slice(0, 6)
+    .map(([a, b]) => `${esc(nameOf(a))} i ${esc(nameOf(b))}`).join(' · ');
+  return `<div class="pref-note pref-note-warn"><span class="mi mi-xs">person_off</span>
+      <div><b>${separationLabel(stats.clashes.length)} sense respectar</b>
+      <div class="pref-note-meta">${pairs}${stats.clashes.length > 6 ? ' · …' : ''}.
+      ${W.useAvoid === false
+        ? 'Les separacions estan desactivades: torna a la configuració per aplicar-les.'
+        : 'Amb aquestes mides no hi ha manera de separar-los tots; prova una altra proposta o canvia la mida dels equips.'}</div></div></div>`;
+}
+
+/** Com es ven la millor proposta desada quan la d'ara no hi arriba. */
+function betterProposalHtml(stats) {
+  const best = W.best.stats;
+  const fewer = best.avoidBroken < stats.avoidBroken
+    ? (best.avoidBroken
+        ? ` i només ${separationLabel(best.avoidBroken)} sense respectar`
+        : ' i totes les separacions respectades')
+    : '';
+  return `<div class="pref-note pref-note-warn"><span class="mi mi-xs">history</span>
+      <div>La millor proposta arriba al <b>${best.pct === null ? 0 : best.pct}%</b>${fewer}.
+      <button class="btn btn-sm" data-action="prefRestoreBest" style="margin-left:6px">Recuperar-la</button></div></div>`;
 }
 
 function resultSummaryHtml() {
   const { stats, attempt, edited } = W.proposal;
-  const best = W.best ? (W.best.stats.pct || 0) : 0;
-  const current = stats.pct || 0;
   const meta = [
-    `${stats.met} de ${stats.total} tries`,
-    mutualLabel(stats.mutual),
-    stats.unhappy ? `${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta` : 'tothom té algú de la seva llista',
+    stats.total ? `${stats.met} de ${stats.total} tries` : '',
+    stats.total ? mutualLabel(stats.mutual) : '',
+    stats.total
+      ? (stats.unhappy ? `${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta` : 'tothom té algú de la seva llista')
+      : '',
+    stats.avoidTotal ? separationsKept(stats.avoidKept, stats.avoidTotal) : '',
     `proposta ${attempt}${W.attempts > 1 ? ` de ${W.attempts}` : ''}${edited ? ', retocada a mà' : ''}`
-  ];
+  ].filter(Boolean);
+  // Un full que només preguntava per separacions s'encapçala amb les seves xifres.
+  const headline = stats.total || !stats.avoidTotal
+    ? { label: 'Preferències acomplertes', pct: stats.pct }
+    : { label: 'Separacions respectades', pct: stats.avoidPct };
+  const value = headline.pct === null ? 0 : headline.pct;
   return `<div class="pref-summary pref-summary-big">
       <div class="pref-summary-head">
-        <span>Preferències acomplertes</span>
-        <b class="pref-${current >= 75 ? 'good' : current >= 40 ? 'medium' : 'bad'}">${stats.pct === null ? '—' : current + '%'}</b>
+        <span>${headline.label}</span>
+        <b class="pref-${value >= 75 ? 'good' : value >= 40 ? 'medium' : 'bad'}">${headline.pct === null ? '—' : value + '%'}</b>
       </div>
-      ${matchBar(stats.pct)}
+      ${matchBar(headline.pct)}
       <div class="pref-summary-meta">${meta.join(' · ')}</div>
     </div>
-    ${current < best
-      ? `<div class="pref-note pref-note-warn"><span class="mi mi-xs">history</span>
-          <div>La millor proposta arriba al <b>${best}%</b>.
-          <button class="btn btn-sm" data-action="prefRestoreBest" style="margin-left:6px">Recuperar-la</button></div></div>`
-      : ''}`;
+    ${clashNoteHtml(stats)}
+    ${W.best && proposalQuality(stats) < proposalQuality(W.best.stats) ? betterProposalHtml(stats) : ''}`;
 }
 
 function resultGroupsHtml() {
@@ -1385,7 +1590,7 @@ function resultGroupsHtml() {
         <b>Equip ${index + 1}</b>
         <span class="pref-chip pref-${tone}">${entry.pct === null ? '—' : entry.pct + '%'}</span>
       </div>
-      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}</div>
+      <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}${entry.avoidBroken ? ` · <b class="pref-bad">${separationLabel(entry.avoidBroken)} sense respectar</b>` : ''}</div>
       ${group.map(id => memberRowHtml(id, stats)).join('')}
     </div>`;
   }).join('');
@@ -1508,6 +1713,7 @@ function writeProposal() {
     source: W.source || '',
     ranked: W.ranked !== false,
     prefs: JSON.parse(JSON.stringify(W.prefs)),
+    avoid: JSON.parse(JSON.stringify(W.avoid || {})),
     unresolved: W.unresolved.map(item => item.name),
     // En tornar a proposar amb les mateixes respostes, la millor versio es conserva.
     best: W.fromStored ? (teams.preferences?.best || null) : null
@@ -1536,7 +1742,8 @@ function writeProposal() {
   setTimeout(() => A.zoomReset(), 60);
 
   const pct = proposal.stats.pct === null ? '' : ` · ${proposal.stats.pct}% de preferències`;
-  toast(`${pluralize(groups.length, 'equip')} ${groups.length === 1 ? 'format' : 'formats'}${pct}`, 'success');
+  const clashes = proposal.stats.avoidBroken ? ` · ${separationLabel(proposal.stats.avoidBroken)} sense respectar` : '';
+  toast(`${pluralize(groups.length, 'equip')} ${groups.length === 1 ? 'format' : 'formats'}${pct}${clashes}`, 'success');
   W = null;
 }
 
@@ -1559,6 +1766,7 @@ A.registerActions({
   prefToggleHeader: node => toggleHeader(node.checked),
   prefSetColumn: node => setColumn(node.dataset.role, parseInt(node.dataset.idx, 10), node.value),
   prefAddColumn: () => { W.mapping.prefs.push(-1); renderWizard(); },
+  prefAddAvoidColumn: () => { W.mapping.avoid.push(-1); renderWizard(); },
   prefColumnsNext: () => columnsNext(),
   prefSetRosterMode: node => setRosterMode(node.value),
   prefSetConfigName: node => { W.newConfigName = node.value.trim(); },
@@ -1567,6 +1775,7 @@ A.registerActions({
   prefSetPlanValue: node => setPlanValue(node.value),
   prefSetRemainder: node => { W.plan.remainder = node.dataset.value; renderWizard(); },
   prefToggleRanked: node => { W.ranked = node.checked; },
+  prefToggleAvoid: node => { W.useAvoid = node.checked; renderWizard(); },
   prefToggleConstraints: node => { W.useConstraints = node.checked; renderWizard(); },
   prefGenerate: () => generateProposal(),
   prefGenerateAgain: () => generateProposal(),
@@ -1579,7 +1788,7 @@ A.registerActions({
 Object.assign(A, {
   normalizeNameText, nameKey, buildNameIndex, resolveName,
   looksLikeHeader, autoMapping, columnLabels, emptyColumns, readEntries, matchRoster,
-  buildRoster, buildPreferences, planPreferenceSizes, describeSizes,
+  buildRoster, buildPreferences, planPreferenceSizes, describeSizes, avoidLinks,
   preferenceWeights, optimizePreferenceGroups, preferenceStats, matchTone,
   preferenceTeamView, renderPreferencePanel, restoreFormation, startPreferenceWizard: startWizard
 });

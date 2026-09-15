@@ -149,16 +149,23 @@ function copyStudentsInto(data, source) {
 
   const preferences = origin.teams.preferences;
   if (preferences) {
-    const prefs = {};
-    Object.entries(preferences.prefs).forEach(([studentId, list]) => {
-      const owner = idMap.get(studentId);
-      const choices = list.map(id => idMap.get(id)).filter(Boolean);
-      if (owner && choices.length) prefs[owner] = choices;
-    });
-    if (Object.keys(prefs).length) {
+    // Tries i separacions passen a apuntar als alumnes acabats de copiar.
+    const remap = source => {
+      const links = {};
+      Object.entries(source || {}).forEach(([studentId, list]) => {
+        const owner = idMap.get(studentId);
+        const names = list.map(id => idMap.get(id)).filter(Boolean);
+        if (owner && names.length) links[owner] = names;
+      });
+      return links;
+    };
+    const prefs = remap(preferences.prefs);
+    const avoid = remap(preferences.avoid);
+    if (Object.keys(prefs).length || Object.keys(avoid).length) {
       data.teams.preferences = {
         updated: preferences.updated, source: preferences.source,
-        ranked: preferences.ranked !== false, prefs, unresolved: [...preferences.unresolved], best: null
+        ranked: preferences.ranked !== false, prefs, avoid,
+        unresolved: [...preferences.unresolved], best: null
       };
     }
   }

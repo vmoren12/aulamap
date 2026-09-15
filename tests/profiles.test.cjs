@@ -55,6 +55,7 @@ function fillClass(A) {
   data.teams.preferences = {
     updated: '01/09/2026 10:00', source: 'formulari.csv', ranked: true,
     prefs: { [anna.id]: [pau.id, nil.id], [pau.id]: [anna.id] },
+    avoid: { [nil.id]: [pau.id] },
     unresolved: ['Berta Soler'], best: null
   };
   data.relations.push({ id: 'r1', type: 'together', students: [anna.id, pau.id] });
@@ -119,6 +120,8 @@ test('a new configuration inherits the names, the levels and the answers', () =>
   assert.deepEqual(Array.from(data.teams.preferences.prefs[newAnna.id]), [newPau.id, newNil.id],
     'les tries apunten als alumnes copiats');
   assert.deepEqual(Array.from(data.teams.preferences.prefs[newPau.id]), [newAnna.id]);
+  assert.deepEqual(Array.from(data.teams.preferences.avoid[newNil.id]), [newPau.id],
+    'les separacions demanades al full també segueixen els alumnes copiats');
   assert.deepEqual(Array.from(data.teams.preferences.unresolved), ['Berta Soler']);
   assert.equal(data.teams.preferences.best, null);
 

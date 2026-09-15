@@ -37,6 +37,7 @@
   letter-spacing:0.3px;font-size:9px;z-index:1;}
 .pref-preview .pref-col-name{color:var(--accent);background:var(--accent-glow);}
 .pref-preview .pref-col-pref{color:var(--green);background:var(--green-bg);}
+.pref-preview .pref-col-avoid{color:var(--red);background:var(--red-bg);}
 
 /* RESUM DE L'ALUMNAT */
 .pref-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;}
@@ -80,6 +81,7 @@
 .pref-member:active{cursor:grabbing;}
 .pref-member.pref-picked{border-color:var(--accent);background:var(--accent-glow);}
 .pref-member.pref-dragging{opacity:0.35;}
+.pref-member.pref-member-clash{box-shadow:inset 2px 0 0 var(--red);}
 .pref-member-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pref-group.pref-drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow);}
 .pref-hint{display:flex;gap:6px;align-items:flex-start;font-size:10px;color:var(--text3);line-height:1.5;margin:0 0 8px;}
@@ -91,6 +93,7 @@
 .pref-chip.pref-good{background:var(--green-bg);color:var(--green);}
 .pref-chip.pref-medium{background:var(--orange-bg);color:var(--orange);}
 .pref-chip.pref-bad{background:var(--red-bg);color:var(--red);}
+.pref-chip.pref-avoid{display:inline-flex;align-items:center;gap:2px;background:var(--red-bg);color:var(--red);}
 .pref-good{color:var(--green);}
 .pref-medium{color:var(--orange);}
 .pref-bad{color:var(--red);}

@@ -46,17 +46,23 @@ function teamIndexOf(studentId) {
 function removeStudentFromTeams(teams, studentId) {
   delete teams.competencies[studentId];
   if (teams.preferences) {
-    delete teams.preferences.prefs[studentId];
-    Object.keys(teams.preferences.prefs).forEach(id => {
-      teams.preferences.prefs[id] = teams.preferences.prefs[id].filter(other => other !== studentId);
-      if (!teams.preferences.prefs[id].length) delete teams.preferences.prefs[id];
+    // Tant les tries com les peticions de separació perden l'alumne.
+    ['prefs', 'avoid'].forEach(field => {
+      const links = teams.preferences[field];
+      if (!links) return;
+      delete links[studentId];
+      Object.keys(links).forEach(id => {
+        links[id] = links[id].filter(other => other !== studentId);
+        if (!links[id].length) delete links[id];
+      });
     });
     const best = teams.preferences.best;
     if (best) {
       best.groups = best.groups.map(group => group.filter(id => id !== studentId)).filter(group => group.length);
       if (!best.groups.length) teams.preferences.best = null;
     }
-    if (!Object.keys(teams.preferences.prefs).length) teams.preferences = null;
+    if (!Object.keys(teams.preferences.prefs).length &&
+        !Object.keys(teams.preferences.avoid || {}).length) teams.preferences = null;
   }
   delete teams.lockedStudents[studentId];
   [REL_TOGETHER, REL_SEPARATE].forEach(type => {
@@ -1017,7 +1023,9 @@ function doExportTeams(includeCompetency) {
   const teams = A.getTeams();
   const date = new Date().toLocaleDateString('ca-ES');
   const total = teams.groups.reduce((sum, group) => sum + group.length, 0);
-  const stats = teams.preferences ? A.preferenceStats(teams.groups, teams.preferences.prefs) : null;
+  const stats = teams.preferences
+    ? A.preferenceStats(teams.groups, teams.preferences.prefs, { avoid: teams.preferences.avoid })
+    : null;
 
   const lines = [
     'EQUIPS DE TREBALL',

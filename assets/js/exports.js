@@ -284,14 +284,20 @@ function exportTeamsCsv() {
   const teams = A.getTeams();
   if (!teams.groups?.length) { toast('No hi ha equips formats', 'error'); return; }
   // Si el grup ve d'un full de preferencies, cada alumne en porta el recompte.
-  const stats = teams.preferences ? A.preferenceStats(teams.groups, teams.preferences.prefs) : null;
+  const stats = teams.preferences
+    ? A.preferenceStats(teams.groups, teams.preferences.prefs, { avoid: teams.preferences.avoid })
+    : null;
   const rows = [stats
-    ? ['equip', 'alumne', 'nivell', 'preferencies acomplertes', 'preferencies indicades']
+    ? ['equip', 'alumne', 'nivell', 'preferencies acomplertes', 'preferencies indicades',
+       'separacions demanades', 'separacions sense respectar']
     : ['equip', 'alumne', 'nivell']];
   teams.groups.forEach((group, index) => {
     group.forEach(id => {
       const row = [A.teamName(index), A.studentName(id), A.competencyOf(id)];
-      if (stats) row.push(stats.perStudent[id]?.met ?? 0, stats.perStudent[id]?.total ?? 0);
+      const entry = stats && stats.perStudent[id];
+      if (stats) {
+        row.push(entry?.met ?? 0, entry?.total ?? 0, entry?.avoidTotal ?? 0, entry?.avoidBroken ?? 0);
+      }
       rows.push(row);
     });
   });

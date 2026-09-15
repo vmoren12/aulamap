@@ -77,6 +77,10 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   directament des del full de càlcul. Tolera columnes buides, capçaleres de Google Forms
   (marca de temps, correu...), respostes incompletes, files sense nom i alumnes que
   responen dues vegades (es queda la resposta més nova).
+- Si el formulari també pregunta **amb qui no vol coincidir**, les columnes de separació
+  («Separar 1», «Separar 2», «Amb qui NO vols treballar?»...) es detecten per la
+  capçalera i es poden assignar a mà. No cal que n'hi hagi cap, i tampoc cal que tothom
+  les respongui.
 - **Identifica els noms** encara que estiguin escrits a mitges, sense accents, en
   minúscules o amb els cognoms al davant. El que no es pot identificar amb seguretat
   s'informa en comptes d'endevinar-ho.
@@ -85,9 +89,13 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   coincideixen o obrir una **configuració nova** sense tocar la classe actual.
 - El docent tria **quants equips** vol (o quants alumnes per equip) i **què fer amb els
   sobrants**: equips desiguals (±1), un equip a part o deixar-los sense equip.
-- Proposa el repartiment que **acompleix més preferències**, respectant els conjunts
-  d'ajuntar i separar. Es pot **regenerar tantes vegades com calgui** i recuperar la
-  millor proposta generada.
+- Proposa el repartiment que **acompleix més preferències** i, alhora, **separa qui ho ha
+  demanat**: una petició de separació pesa més que qualsevol tria, i els conjunts
+  d'ajuntar i separar que el docent hagi escrit a mà encara manen per sobre de totes
+  dues. Si algú apareix a les dues columnes, mana la separació. Es pot **regenerar
+  tantes vegades com calgui** i recuperar la millor proposta generada.
+- Les separacions es poden **desactivar** abans de generar la proposta; els indicadors
+  segueixen dient quantes se n'estan deixant passar.
 - La proposta es pot **retocar a mà** abans de carregar-la: arrossega un nom cap a un
   altre equip per moure'l, o a sobre d'un company per intercanviar-los (en pantalla
   tàctil, toca el nom i després el destí). Els percentatges es refan a cada canvi i la
@@ -95,14 +103,19 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
 - Mostra el **percentatge global**, el de cada equip i el de cada alumne
   (`2/3`, amb color i amb el detall de qui té a prop i qui li falta). Els indicadors es
   queden al panell d'Equips, al llenç i a les exportacions.
+- Compta les **separacions respectades** i, quan amb aquelles mides d'equip no n'hi ha
+  prou per a totes, marca l'alumne i l'equip i **diu quines parelles han quedat juntes**.
 - **Tornar a proposar** repeteix el repartiment amb les respostes ja carregades, sense
   haver de tornar a importar el full.
 - L'aplicació recorda la **millor formació carregada** i, si després de fer proves el
   repartiment d'ara n'acompleix menys, ofereix **recuperar-la** amb un botó que en diu el
   percentatge. La memòria es manté mentre es treballa amb les mateixes respostes.
 
-A `exemples/preferencies-60-alumnes.csv` hi ha un full de respostes de prova amb 60
-alumnes inventats (amb columnes buides, una resposta repetida i un nom de fora del grup).
+A `exemples/` hi ha dos fulls de respostes de prova amb alumnes inventats:
+`preferencies-60-alumnes.csv` (60 alumnes, amb columnes buides, una resposta repetida i
+un nom de fora del grup) i `preferencies-28-alumnes-separacions.csv` (28 alumnes amb una
+columna de separació: peticions recíproques i d'una sola banda, algú que només respon la
+separació, un nom escrit amb el cognom al davant i un altre de fora del grup).
 
 ### Interfície
 - **Mode clar i mode fosc** (menú de la capçalera), pensat per projectar sobre paret blanca.
@@ -152,7 +165,7 @@ assets/css/
   sidebar.css               Barra lateral, llistes i conjunts d'alumnes
   canvas.css                Llenç de l'aula, pupitres i controls
   teams.css                 Panell i taules d'equips
-  preferences.css           Assistent de preferències i indicadors d'acompliment
+  preferences.css           Assistent de preferències i separacions, i indicadors d'acompliment
   responsive.css            Navegació mòbil i adaptació a pantalles petites
 assets/js/
   core.js                   Constants, utilitats, modals, selector d'alumnes i registre d'accions
@@ -164,7 +177,7 @@ assets/js/
   autoassign.js             Assignació automàtica optimitzada
   teams.js                  Formació d'equips, restriccions i equips desats
   teamscanvas.js            Esquema d'equips sobre el llenç
-  preferences.js            Full de preferències, repartiment òptim i indicadors
+  preferences.js            Full de preferències i separacions, repartiment òptim i indicadors
   exports.js                Fitxers .json, CSV i exportació a PDF
   ui.js                     Pestanyes, tema, zoom, desplaçament i repintat global
   canvasselection.js        Selecció múltiple i moviment de pupitres
@@ -198,8 +211,9 @@ state
     ├── layoutType, layoutRows, layoutCols, layoutSpacing, teacherAtBottom
     └── teams           mides, competències, restriccions, equips, esquema propi
                         (`layout`), equips desats i preferències de l'alumnat
-                        (`preferences`: qui ha triat qui, l'origen del full i els
-                        noms que no s'han pogut identificar)
+                        (`preferences`: qui ha triat qui (`prefs`), qui vol estar
+                        separat de qui (`avoid`), l'origen del full i els noms
+                        que no s'han pogut identificar)
 ```
 
 Les dades de versions anteriors (`aulamap_v4`, `aulamap_equips_v1`) es migren

@@ -221,15 +221,18 @@ test('the indicators count what each student and each team gets', () => {
   const prefs = { s0: ['s1', 's2'], s1: ['s0'], s2: ['s3'], s3: [] };
   const stats = plain(A.preferenceStats([['s0', 's1'], ['s2', 's3']], prefs));
 
-  assert.deepEqual(stats.perStudent.s0, { met: 1, total: 2, metIds: ['s1'], missIds: ['s2'], first: true });
+  assert.deepEqual(stats.perStudent.s0, {
+    met: 1, total: 2, metIds: ['s1'], missIds: ['s2'], first: true,
+    avoidTotal: 0, avoidBroken: 0, avoidIds: []
+  });
   assert.equal(stats.perStudent.s3.total, 0, 'qui no tria no compta com a insatisfet');
   assert.equal(stats.met, 3);
   assert.equal(stats.total, 4);
   assert.equal(stats.pct, 75);
   assert.equal(stats.answered, 3);
   assert.equal(stats.mutual, 1);
-  assert.deepEqual(plain(stats.perGroup[0]), { met: 2, total: 3, pct: 67, mutual: 1 });
-  assert.deepEqual(plain(stats.perGroup[1]), { met: 1, total: 1, pct: 100, mutual: 0 });
+  assert.deepEqual(plain(stats.perGroup[0]), { met: 2, total: 3, pct: 67, mutual: 1, avoidBroken: 0 });
+  assert.deepEqual(plain(stats.perGroup[1]), { met: 1, total: 1, pct: 100, mutual: 0, avoidBroken: 0 });
   assert.equal(A.matchTone(1, 2), 'medium');
   assert.equal(A.matchTone(0, 2), 'bad');
   assert.equal(A.matchTone(2, 2), 'good');
@@ -240,4 +243,152 @@ test('preferences that name students out of the class are ignored by the counter
   const stats = plain(A.preferenceStats([['s0', 's1']], { s0: ['s1', 'fora'], s1: [] }));
   assert.equal(stats.total, 1);
   assert.equal(stats.pct, 100);
+});
+
+/* ── Columnes de separació ───────────────────────────── */
+
+test('separation columns are told apart from the preference ones by the header', () => {
+  const { A } = setup();
+  const rows = [
+    ['Marca de temps', 'Nom i cognoms', 'Amb qui vols treballar? (1a)', 'Amb qui vols treballar? (2a)',
+     'Amb qui prefereixes NO coincidir? (Separar 1)', 'Separar 2'],
+    ['12/05/2026 9:03', 'Anna Puig', 'Pau Serra', 'Nil Roca', 'Teo Mas', ''],
+    ['12/05/2026 9:05', 'Pau Serra', 'Anna Puig', '', 'Jana Ferrer', 'Teo Mas']
+  ];
+  const mapping = plain(A.autoMapping(rows, true));
+  assert.equal(mapping.name, 1);
+  assert.deepEqual(mapping.prefs, [2, 3, -1], 'les de separar no es colen a les preferències');
+  assert.deepEqual(mapping.avoid, [4, 5]);
+  assert.equal(A.looksLikeHeader(rows), true);
+});
+
+test('a sheet with separation columns only still maps the names', () => {
+  const { A } = setup();
+  const rows = [
+    ['Alumne/a', 'Separar 1'],
+    ['Anna Puig', 'Teo Mas'],
+    ['Pau Serra', '']
+  ];
+  const mapping = plain(A.autoMapping(rows, true));
+  assert.equal(mapping.name, 0);
+  assert.deepEqual(mapping.avoid, [1]);
+  assert.deepEqual(mapping.prefs, [-1, -1, -1], 'no hi ha cap columna de preferència');
+});
+
+test('without a header no column is guessed as a separation', () => {
+  const { A } = setup();
+  const rows = [['Anna Puig', 'Pau Serra', 'Nil Roca'], ['Pau Serra', 'Anna Puig', '']];
+  const mapping = plain(A.autoMapping(rows, false));
+  assert.deepEqual(mapping.avoid, [], 'sense capçalera no hi ha manera de distingir-les');
+  assert.deepEqual(mapping.prefs, [1, 2, -1]);
+});
+
+test('the reader keeps the separations of the newest answer and drops nameless rows', () => {
+  const { A } = setup();
+  const rows = [
+    ['Nom', 'P1', 'Separar 1'],
+    ['Anna Puig', 'Pau Serra', 'Teo Mas'],
+    ['', '', 'Nil Roca'],
+    ['Anna Puig', 'Nil Roca', 'Jana Ferrer'],
+    ['Pau Serra', '', '']
+  ];
+  const read = plain(A.readEntries(rows, true, { name: 0, prefs: [1], avoid: [2] }));
+  assert.equal(read.entries.length, 2);
+  assert.equal(read.nameless, 1, 'una fila només amb separació però sense nom també es descarta');
+  assert.equal(read.duplicates, 1);
+  assert.deepEqual(read.entries[0].avoid, ['Jana Ferrer'], 'mana la resposta més nova');
+  assert.deepEqual(read.entries[1].avoid, [], 'qui no en demana cap no en porta');
+});
+
+test('a sheet mapped without separation columns reads exactly as before', () => {
+  const { A } = setup();
+  const rows = [['Nom', 'P1'], ['Anna Puig', 'Pau Serra']];
+  const read = plain(A.readEntries(rows, true, { name: 0, prefs: [1] }));
+  assert.deepEqual(read.entries[0].avoid, []);
+});
+
+test('separations become identifiers and beat a choice that names the same person', () => {
+  const { A, data } = setup(['Anna Puig', 'Pau Serra', 'Nil Roca']);
+  const entries = [
+    { name: 'Anna Puig', choices: ['Pau Serra', 'Nil Roca'], avoid: ['Pau Serra'], studentId: 's0' },
+    { name: 'Pau Serra', choices: ['Anna Puig'], avoid: ['Pau Serra', 'Joana Mas'], studentId: 's1' },
+    { name: 'Nil Roca', choices: [], avoid: ['anna puig'], studentId: 's2' }
+  ];
+  const result = plain(A.buildPreferences(entries, data.students));
+  assert.deepEqual(result.prefs.s0, ['s2'], 'el Pau surt de les tries perquè el volen separar');
+  assert.deepEqual(result.avoid.s0, ['s1']);
+  assert.equal(result.avoid.s1, undefined, 'ningú es pot separar de si mateix');
+  assert.deepEqual(result.avoid.s2, ['s0'], 'els noms es reconeixen igual que a les tries');
+  assert.deepEqual(result.unresolved.map(item => item.name), ['Joana Mas'],
+    'un nom de fora la classe s\'informa vingui de la columna que vingui');
+  assert.equal(A.avoidLinks(result.avoid), 2);
+});
+
+/* ── Repartiment amb separacions ─────────────────────── */
+
+test('two students who ask to be separated do not share a team', () => {
+  const { A } = setup();
+  const ids = ['s0', 's1', 's2', 's3'];
+  const prefs = { s0: ['s1'], s1: ['s0'], s2: ['s3'], s3: ['s2'] };
+  const together = plain(A.optimizePreferenceGroups({ ids, prefs, sizes: [2, 2], seed: 4 }));
+  assert.equal(together.groups.some(group => group.includes('s0') && group.includes('s1')), true,
+    'sense separacions les tries recíproques van juntes');
+
+  const apart = plain(A.optimizePreferenceGroups({
+    ids, prefs, avoid: { s0: ['s1'] }, sizes: [2, 2], seed: 4
+  }));
+  assert.equal(apart.groups.some(group => group.includes('s0') && group.includes('s1')), false,
+    'una petició de separació pesa més que la tria recíproca');
+});
+
+test('what the teacher writes by hand still beats what the sheet asks', () => {
+  const { A } = setup();
+  const ids = ['s0', 's1', 's2', 's3'];
+  const result = plain(A.optimizePreferenceGroups({
+    ids, prefs: {}, avoid: { s0: ['s1'], s1: ['s0'] }, sizes: [2, 2], seed: 9,
+    constraints: { together: [{ students: ['s0', 's1'] }], separate: [] }
+  }));
+  assert.equal(result.groups.some(group => group.includes('s0') && group.includes('s1')), true,
+    'el conjunt d\'ajuntar del panell de relacions mana sobre el full');
+});
+
+test('the counters report the separations kept, the broken ones and who they pair up', () => {
+  const { A } = setup(['Anna', 'Pau', 'Nil', 'Jana']);
+  const prefs = { s0: ['s1'], s1: ['s0'] };
+  const avoid = { s0: ['s1'], s1: ['s0'], s2: ['s3'] };
+  const stats = plain(A.preferenceStats([['s0', 's1'], ['s2'], ['s3']], prefs, { avoid }));
+
+  assert.equal(stats.avoidTotal, 3, 'les tres peticions compten, també les dues de la recíproca');
+  assert.equal(stats.avoidBroken, 2);
+  assert.equal(stats.avoidKept, 1);
+  assert.equal(stats.avoidPct, 33);
+  assert.deepEqual(stats.clashes, [['s0', 's1']], 'una parella junta surt una sola vegada');
+  assert.equal(stats.perStudent.s0.avoidBroken, 1);
+  assert.deepEqual(stats.perStudent.s0.avoidIds, ['s1']);
+  assert.equal(stats.perStudent.s2.avoidTotal, 1);
+  assert.equal(stats.perStudent.s2.avoidBroken, 0, 'el Nil i la Jana han quedat en equips diferents');
+  assert.equal(stats.perGroup[0].avoidBroken, 2);
+  assert.equal(stats.perGroup[1].avoidBroken, 0);
+  assert.equal(stats.pct, 100, 'els indicadors de preferències no canvien');
+});
+
+test('a one-sided separation is reported once and students left out break nothing', () => {
+  const { A } = setup(['Anna', 'Pau', 'Nil']);
+  const shared = plain(A.preferenceStats([['s0', 's1']], {}, { avoid: { s1: ['s0'] } }));
+  assert.deepEqual(shared.clashes, [['s1', 's0']]);
+  assert.equal(shared.avoidBroken, 1);
+
+  const out = plain(A.preferenceStats([['s0']], {}, { avoid: { s1: ['s2'] }, leftover: ['s1', 's2'] }));
+  assert.equal(out.avoidTotal, 1);
+  assert.equal(out.avoidBroken, 0, 'qui es queda sense equip no comparteix taula amb ningú');
+  assert.equal(out.avoidPct, 100);
+});
+
+test('a sheet with no separations leaves every separation counter at zero', () => {
+  const { A } = setup(['Anna', 'Pau']);
+  const stats = plain(A.preferenceStats([['s0', 's1']], { s0: ['s1'] }));
+  assert.equal(stats.avoidTotal, 0);
+  assert.equal(stats.avoidBroken, 0);
+  assert.equal(stats.avoidPct, null);
+  assert.deepEqual(stats.clashes, []);
 });

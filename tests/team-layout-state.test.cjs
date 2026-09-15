@@ -37,3 +37,41 @@ test('saved layouts retain distinct coordinates and sanitize stale or duplicate 
   data.teams.layout.desks[0].x = 1000;
   assert.equal(data.teams.saved[0].layout.desks[0].x, 30);
 });
+
+/** Converteix les estructures que tornen del context aïllat a objectes plans. */
+const plain = value => JSON.parse(JSON.stringify(value));
+
+test('the stored answers keep the separations and drop the names that no longer exist', () => {
+  const data = A.normalizeConfigData({
+    students: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    teams: {
+      preferences: {
+        updated: '01/09/2026 10:00', source: 'formulari.csv',
+        prefs: { a: ['b', 'fora'] },
+        avoid: { b: ['c', 'b', 'fora'], fora: ['a'] },
+        unresolved: ['Berta Soler'],
+        best: { groups: [['a', 'b'], ['fora']], pct: 80, broken: 1, updated: '01/09/2026 10:00' }
+      }
+    }
+  });
+  const stored = data.teams.preferences;
+  assert.deepEqual(plain(stored.prefs), { a: ['b'] });
+  assert.deepEqual(plain(stored.avoid), { b: ['c'] }, 'ni un mateix ni identificadors morts');
+  assert.deepEqual(plain(stored.best.groups), [['a', 'b']]);
+  assert.equal(stored.best.broken, 1);
+});
+
+test('a sheet that only asked who to separate is still worth keeping', () => {
+  const data = A.normalizeConfigData({
+    students: [{ id: 'a' }, { id: 'b' }],
+    teams: { preferences: { prefs: {}, avoid: { a: ['b'] }, unresolved: [] } }
+  });
+  assert.ok(data.teams.preferences, 'sense cap tria, les separacions ja justifiquen desar-ho');
+  assert.deepEqual(plain(data.teams.preferences.avoid), { a: ['b'] });
+
+  const empty = A.normalizeConfigData({
+    students: [{ id: 'a' }],
+    teams: { preferences: { prefs: { a: ['fantasma'] }, avoid: {}, unresolved: [] } }
+  });
+  assert.equal(empty.teams.preferences, null, 'sense res aprofitable no es desa res');
+});

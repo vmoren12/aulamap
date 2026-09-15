@@ -457,3 +457,217 @@ test('separate sets are honoured over the preferences', () => {
   const teamOf = id => groups.findIndex(group => group.includes(id));
   assert.notEqual(teamOf('s0'), teamOf('s1'), 'l\'Anna i el Pau es trien, però estan separats');
 });
+
+/* ── Columnes de separació ───────────────────────────── */
+
+/**
+ * El mateix full, amb una columna de separació al final. La Jana i el Lluc es
+ * volen separar tots dos, l'Ona ho demana pel seu compte i el Teo n'anota algú
+ * que no és de la classe.
+ */
+const AVOID_SHEET = [
+  'Marca de temps;Nom i cognoms;Comentaris;Preferència 1;Preferència 2;Amb qui prefereixes NO coincidir? (Separar 1)',
+  '12/05/2026 9:01;Anna Puig Solà;;Pau Serra Vidal;Nil Roca Camps;',
+  '12/05/2026 9:02;Pau Serra Vidal;;Anna Puig Solà;Nil Roca Camps;',
+  '12/05/2026 9:03;Nil Roca Camps;;Pau Serra Vidal;Anna Puig Solà;',
+  '12/05/2026 9:04;"Ferrer Mas, Jana";;Lluc Vidal Pons;Anna Puig Solà;Lluc Vidal Pons',
+  '12/05/2026 9:05;Lluc Vidal Pons;;Jana Ferrer Mas;Ona Camps Roig;jana ferrer',
+  '12/05/2026 9:06;Ona Camps Roig;;Lluc Vidal Pons;Teo Mas Grau;Nil Roca Camps',
+  '12/05/2026 9:07;Teo Mas Grau;;Lluc Vidal Pons;Ona Camps Roig;Berta Soler'
+].join('\r\n');
+
+/** Porta l'assistent amb el full de separacions fins al pas dels equips. */
+function openAvoidSheet(helper) {
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = AVOID_SHEET;
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+}
+
+test('the column step maps the separation column on its own and shows it', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = AVOID_SHEET;
+  helper.run('prefReadSource');
+
+  const html = helper.lastModal();
+  assert.match(html, /<label>Separar 1<\/label>/, 'la columna de separació té el seu propi camp');
+  assert.match(html, /pref-col-avoid/, 'i queda destacada a la vista prèvia');
+  assert.match(html, /Una separació més/);
+});
+
+test('a sheet without separation columns still offers to add one by hand', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = SHEET;
+  helper.run('prefReadSource');
+  assert.match(helper.lastModal(), /Afegir una columna de separació/);
+  assert.doesNotMatch(helper.lastModal(), /<label>Separar 1<\/label>/);
+
+  helper.run('prefAddAvoidColumn');
+  assert.match(helper.lastModal(), /<label>Separar 1<\/label>/);
+  helper.run('prefSetColumn', { role: 'avoid', idx: '0' }, { value: '5' });
+  helper.run('prefColumnsNext');
+  // La columna 5 era la tercera preferència: passa a ser de separació.
+  assert.match(helper.lastModal(), /peticions de separació/);
+});
+
+test('the wizard reads the separations, counts them and keeps them apart', () => {
+  const helper = setupWizard(CLASS);
+  openAvoidSheet(helper);
+  assert.match(helper.calls.modals.at(-2), /<b>3<\/b><span>peticions de separació/,
+    'la Jana i el Lluc es demanen mútuament, l\'Ona en demana una i la del Teo no s\'ha identificat');
+  assert.match(helper.lastModal(), /Respectar les 3 separacions demanades al full/);
+
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+  const html = helper.lastModal();
+  assert.match(html, /3 de 3 separacions respectades/);
+  assert.match(html, /Es respecten totes les 3 separacions/);
+
+  const teams = helper.A.getTeams();
+  helper.run('prefApply');
+  const teamOf = id => teams.groups.findIndex(group => group.includes(id));
+  const idOf = name => helper.data.students.find(student => student.name === name).id;
+  assert.notEqual(teamOf(idOf('Jana Ferrer Mas')), teamOf(idOf('Lluc Vidal Pons')),
+    'la separació recíproca es respecta tot i que es triïn l\'un a l\'altre');
+  assert.notEqual(teamOf(idOf('Ona Camps Roig')), teamOf(idOf('Nil Roca Camps')));
+});
+
+test('the separations are stored with the answers and reused the next round', () => {
+  const helper = setupWizard(CLASS);
+  openAvoidSheet(helper);
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+  helper.run('prefApply');
+
+  const stored = helper.data.teams.preferences;
+  const idOf = name => helper.data.students.find(student => student.name === name).id;
+  assert.deepEqual(Array.from(stored.avoid[idOf('Jana Ferrer Mas')]), [idOf('Lluc Vidal Pons')]);
+  assert.deepEqual(Array.from(stored.avoid[idOf('Ona Camps Roig')]), [idOf('Nil Roca Camps')]);
+  assert.deepEqual(Array.from(stored.unresolved), ['Berta Soler']);
+
+  // El panell lateral en dóna compte sense tornar a llegir el full.
+  helper.A.renderPreferencePanel();
+  assert.match(helper.node('teamPrefStatus').innerHTML, /3 de 3 separacions respectades/);
+  const view = helper.A.preferenceTeamView(helper.data.teams.groups);
+  assert.match(view.summary, /separacions respectades/);
+
+  helper.run('prefRegenerate');
+  assert.match(helper.lastModal(), /Respectar les 3 separacions demanades al full/,
+    'les separacions desades tornen a sortir a la configuració');
+  helper.run('prefGenerate');
+  assert.match(helper.lastModal(), /3 de 3 separacions respectades/);
+});
+
+test('the teacher can switch the separations off and still see what it costs', () => {
+  const helper = setupWizard(CLASS);
+  openAvoidSheet(helper);
+  helper.run('prefToggleAvoid', {}, { checked: false });
+  helper.run('prefSetPlanMode', { value: 'size' });
+  helper.run('prefSetPlanValue', {}, { value: '4' });
+  helper.run('prefGenerate');
+  assert.match(helper.lastModal(), /de 3 separacions respectades/,
+    'els indicadors les segueixen comptant encara que no s\'apliquin');
+
+  // Amb l'interruptor abaixat, una parella que demanava separar-se pot acabar
+  // junta: el resum n'explica el motiu.
+  const placed = cards(helper);
+  const find = name => {
+    for (let index = 0; index < placed.length; index++) {
+      if (placed[index].members.some(item => item.name === name)) {
+        return { id: placed[index].members.find(item => item.name === name).id, team: index };
+      }
+    }
+    throw new Error('no apareix a la proposta: ' + name);
+  };
+  const jana = find('Jana Ferrer Mas');
+  const lluc = find('Lluc Vidal Pons');
+  helper.run('prefPick', { sid: jana.id });
+  helper.run('prefDropOn', { team: String(lluc.team) });
+
+  const html = helper.node('prefSummary').innerHTML;
+  assert.match(html, /1 separació sense respectar/);
+  assert.match(html, /separacions estan desactivades/,
+    'i s\'avisa de per què no s\'han pogut respectar');
+});
+
+test('a clash shows up on the student, on the team and on the summary', () => {
+  const helper = setupWizard(CLASS);
+  openAvoidSheet(helper);
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+
+  // El repartiment els havia separat: es forcen al mateix equip a ma.
+  const placed = cards(helper);
+  const find = name => {
+    for (let index = 0; index < placed.length; index++) {
+      const member = placed[index].members.find(item => item.name === name);
+      if (member) return { id: member.id, team: index };
+    }
+    throw new Error('no apareix a la proposta: ' + name);
+  };
+  const jana = find('Jana Ferrer Mas');
+  const lluc = find('Lluc Vidal Pons');
+  assert.notEqual(jana.team, lluc.team, 'la proposta els havia separat');
+  helper.run('prefPick', { sid: jana.id });
+  helper.run('prefDropOn', { team: String(lluc.team) });
+
+  const html = helper.node('prefGroups').innerHTML;
+  assert.match(html, /pref-member-clash/, 'l\'alumne queda marcat');
+  assert.match(html, /pref-chip pref-avoid/);
+  assert.match(html, /sense respectar/, 'i l\'equip ho diu');
+  assert.match(helper.node('prefSummary').innerHTML, /1 separació sense respectar/);
+  assert.match(helper.node('prefSummary').innerHTML, /Recuperar-la/,
+    'la millor proposta, sense la parella junta, es pot recuperar');
+});
+
+test('a sheet with separations only and no choices is enough to form teams', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = [
+    'Alumne/a;Separar 1',
+    'Anna Puig Solà;Pau Serra Vidal',
+    'Pau Serra Vidal;',
+    'Nil Roca Camps;Jana Ferrer Mas',
+    'Jana Ferrer Mas;'
+  ].join('\r\n');
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+  const proposal = helper.lastModal();
+  assert.match(proposal, /<span>Separacions respectades<\/span>/,
+    'sense cap tria, el titular de la proposta passa a ser el de les separacions');
+  assert.match(proposal, /2 de 2 separacions respectades/);
+  assert.doesNotMatch(proposal, /de 0 tries/, 'no es parla de tries que ningú no ha fet');
+  helper.run('prefApply');
+
+  const teams = helper.data.teams;
+  const teamOf = id => teams.groups.findIndex(group => group.includes(id));
+  const idOf = name => helper.data.students.find(student => student.name === name).id;
+  assert.notEqual(teamOf(idOf('Anna Puig Solà')), teamOf(idOf('Pau Serra Vidal')));
+  assert.notEqual(teamOf(idOf('Nil Roca Camps')), teamOf(idOf('Jana Ferrer Mas')));
+  assert.ok(teams.preferences, 'un full només de separacions també es desa');
+  assert.equal(Object.keys(teams.preferences.prefs).length, 0, 'no hi ha cap tria');
+  assert.equal(Object.keys(teams.preferences.avoid).length, 2);
+
+  // El panell lateral passa a encapçalar-se amb les separacions.
+  const view = helper.A.preferenceTeamView(teams.groups);
+  assert.match(view.summary, /Separacions respectades/);
+  assert.match(view.summary, /100%/);
+});
+
+test('a step with neither choices nor separations will not move on', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = AVOID_SHEET;
+  helper.run('prefReadSource');
+  helper.run('prefSetColumn', { role: 'pref', idx: '0' }, { value: '-1' });
+  helper.run('prefSetColumn', { role: 'pref', idx: '1' }, { value: '-1' });
+  helper.run('prefSetColumn', { role: 'avoid', idx: '0' }, { value: '-1' });
+  helper.run('prefColumnsNext');
+  assert.match(helper.calls.toast.at(-1)[0], /preferència o de separació/);
+});

@@ -18,7 +18,8 @@ function defaultTeamsData() {
     useCompetency: false,
     heterogeneous: false,
     competencies: {},             // { studentId: 0..10 }
-    preferences: null,            // { updated, source, ranked, prefs:{ studentId:[studentId] }, unresolved:[] }
+    preferences: null,            // { updated, source, ranked, prefs:{ studentId:[studentId] },
+                                  //   avoid:{ studentId:[studentId] }, unresolved:[] }
     constraints: { together: [], separate: [] }, // [{ id, students:[studentId] }]
     groups: null,                 // [[studentId]]
     teamNames: {},                // { teamIndex: nom }
@@ -74,18 +75,24 @@ function normalizeTeamLayout(layout, validStudents) {
 }
 
 /**
- * Preferències d'alumnat netes: només parelles d'identificadors que existeixen.
- * Un alumne no es pot triar a ell mateix ni repetir una tria.
+ * Preferències i separacions d'alumnat netes: només parelles d'identificadors
+ * que existeixen. Un alumne no es pot triar ni separar d'ell mateix, ni repetir
+ * cap nom. Un full només amb separacions també és vàlid.
  */
 function normalizePreferences(preferences, validIds) {
-  if (!preferences || typeof preferences !== 'object' || !preferences.prefs) return null;
-  const prefs = {};
-  Object.entries(preferences.prefs).forEach(([studentId, list]) => {
-    if (!validIds.has(studentId) || !Array.isArray(list)) return;
-    const clean = [...new Set(list.filter(id => id !== studentId && validIds.has(id)))];
-    if (clean.length) prefs[studentId] = clean;
-  });
-  if (!Object.keys(prefs).length) return null;
+  if (!preferences || typeof preferences !== 'object') return null;
+  const links = source => {
+    const clean = {};
+    Object.entries(source || {}).forEach(([studentId, list]) => {
+      if (!validIds.has(studentId) || !Array.isArray(list)) return;
+      const ids = [...new Set(list.filter(id => id !== studentId && validIds.has(id)))];
+      if (ids.length) clean[studentId] = ids;
+    });
+    return clean;
+  };
+  const prefs = links(preferences.prefs);
+  const avoid = links(preferences.avoid);
+  if (!Object.keys(prefs).length && !Object.keys(avoid).length) return null;
 
   let best = null;
   const storedGroups = preferences.best?.groups;
@@ -93,7 +100,14 @@ function normalizePreferences(preferences, validIds) {
     const groups = storedGroups
       .map(group => (Array.isArray(group) ? group.filter(id => validIds.has(id)) : []))
       .filter(group => group.length);
-    if (groups.length) best = { groups, pct: Number(preferences.best.pct) || 0, updated: preferences.best.updated || '' };
+    if (groups.length) {
+      best = {
+        groups,
+        pct: Number(preferences.best.pct) || 0,
+        broken: Number(preferences.best.broken) || 0,
+        updated: preferences.best.updated || ''
+      };
+    }
   }
 
   return {
@@ -101,6 +115,7 @@ function normalizePreferences(preferences, validIds) {
     source: preferences.source || '',
     ranked: preferences.ranked !== false,
     prefs,
+    avoid,
     unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : [],
     best
   };
