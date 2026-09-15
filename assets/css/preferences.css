@@ -38,6 +38,10 @@
 .pref-preview .pref-col-name{color:var(--accent);background:var(--accent-glow);}
 .pref-preview .pref-col-pref{color:var(--green);background:var(--green-bg);}
 .pref-preview .pref-col-avoid{color:var(--red);background:var(--red-bg);}
+.pref-preview .pref-col-attr{color:var(--orange);background:var(--orange-bg);}
+.pref-field-note{display:block;font-size:9px;color:var(--text3);margin-top:3px;line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pref-toggle-meta{color:var(--text3);font-size:10px;margin-left:4px;}
 
 /* RESUM DE L'ALUMNAT */
 .pref-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;}
@@ -68,6 +72,27 @@
 .pref-bar .pref-medium{background:var(--orange);}
 .pref-bar .pref-bad{background:var(--red);}
 .pref-bar .pref-none{background:var(--text3);}
+
+/* GRAU D'ASSOLIMENT DE CADA CRITERI */
+.pref-criteria{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:10px;}
+.pref-criterion{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 9px;}
+.pref-criterion-main{border-color:var(--accent);}
+.pref-criterion-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;
+  font-weight:600;color:var(--text2);}
+.pref-criterion-head b{font-family:var(--mono);font-size:13px;}
+.pref-criterion-meta{font-size:9px;color:var(--text3);margin-top:4px;line-height:1.4;}
+.pref-criteria-box{margin-bottom:8px;}
+.pref-criteria-box>summary{font-size:10px;color:var(--text3);cursor:pointer;padding:3px 0;list-style:none;
+  display:flex;align-items:center;gap:4px;}
+.pref-criteria-box>summary::-webkit-details-marker{display:none;}
+.pref-criteria-box>summary .mi{transition:transform 0.15s;}
+.pref-criteria-box[open]>summary .mi{transform:rotate(180deg);}
+.pref-criteria-box>summary:hover{color:var(--accent);}
+.pref-criteria-box .pref-criteria{grid-template-columns:1fr;gap:6px;margin-top:4px;}
+
+/* COMPOSICIÓ DE CADA EQUIP */
+.pref-compo{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:9px;color:var(--text3);margin:3px 0 5px;line-height:1.5;}
+.pref-compo b{color:var(--text2);font-weight:600;margin-right:3px;}
 
 .pref-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;max-height:44vh;overflow-y:auto;padding-right:2px;}
 .pref-group{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 9px;}
@@ -117,5 +142,6 @@
   .pref-steps li{padding:3px 6px;font-size:9px;}
   .pref-steps li:not(.active) span{display:none;}
   .pref-groups{grid-template-columns:1fr;max-height:38vh;}
+  .pref-criteria{grid-template-columns:1fr;}
   .pref-preview{max-height:150px;}
 }

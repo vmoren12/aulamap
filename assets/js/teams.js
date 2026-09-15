@@ -56,13 +56,19 @@ function removeStudentFromTeams(teams, studentId) {
         if (!links[id].length) delete links[id];
       });
     });
+    // El grup d'origen, el sexe i les necessitats també se'n van amb l'alumne.
+    Object.values(teams.preferences.attributes || {}).forEach(values => { delete values[studentId]; });
+    Object.keys(teams.preferences.attributes || {}).forEach(key => {
+      if (!Object.keys(teams.preferences.attributes[key]).length) delete teams.preferences.attributes[key];
+    });
     const best = teams.preferences.best;
     if (best) {
       best.groups = best.groups.map(group => group.filter(id => id !== studentId)).filter(group => group.length);
       if (!best.groups.length) teams.preferences.best = null;
     }
     if (!Object.keys(teams.preferences.prefs).length &&
-        !Object.keys(teams.preferences.avoid || {}).length) teams.preferences = null;
+        !Object.keys(teams.preferences.avoid || {}).length &&
+        !Object.keys(teams.preferences.attributes || {}).length) teams.preferences = null;
   }
   delete teams.lockedStudents[studentId];
   [REL_TOGETHER, REL_SEPARATE].forEach(type => {
@@ -671,6 +677,7 @@ function renderTeamsSidebar(groups) {
           <span class="mi mi-xs">${isLocked ? 'lock' : 'lock_open'}</span>${isLocked ? ' Bloquejat' : ' Bloquejar'}
         </button>
       </div>
+      ${prefView && prefView.composition ? prefView.composition(index) : ''}
       ${group.map(studentId => {
         const studentLocked = teams.lockedStudents[studentId] !== undefined;
         return `<div class="eq-group-member${studentLocked ? ' student-locked' : ''}">
@@ -998,20 +1005,38 @@ function deleteSavedTeam(index) {
 
 /* ── Exportació ──────────────────────────────────────── */
 
+/**
+ * Exportació dels equips: primer es tria el format. El text pla es llegeix a
+ * qualsevol pantalla i el CSV s'obre amb el full de càlcul, amb una fila per
+ * alumne i els indicadors de cada criteri en columnes.
+ */
 function exportTeams() {
   const teams = A.getTeams();
   if (!teams.groups?.length) return;
-  if (teams.useCompetency) {
-    openModal(`<h3><span class="mi">download</span> Exportar equips</h3>
-      <p class="modal-note">Vols incloure els nivells de competència?</p>
-      <div class="modal-footer">
-        <button class="btn" data-action="closeModal">Cancel·lar</button>
-        <button class="btn" data-action="doExportTeams" data-value="">Només noms</button>
-        <button class="btn btn-primary" data-action="doExportTeams" data-value="1">Amb nivells</button>
-      </div>`);
-  } else {
-    doExportTeams(false);
-  }
+  const hasPreferences = !!teams.preferences;
+  openModal(`<h3><span class="mi">download</span> Exportar equips</h3>
+    <p class="modal-note">Tria el format. El <b>text</b> és la llista dels equips per llegir o imprimir;
+      el <b>CSV</b> porta una fila per alumne${hasPreferences
+        ? ", amb les preferències acomplertes, les separacions i les dades de composició que s'hagin carregat"
+        : ''} i s'obre amb qualsevol full de càlcul.</p>
+    ${teams.useCompetency ? `<label class="equips-toggle">
+      <input type="checkbox" id="teamExportLevels" checked>
+      <span>Incloure els nivells de competència</span>
+    </label>` : ''}
+    <div class="modal-footer">
+      <button class="btn" data-action="closeModal">Cancel·lar</button>
+      <button class="btn" data-action="doExportTeams" data-value="txt"><span class="mi mi-xs">description</span> Text (.txt)</button>
+      <button class="btn btn-primary" data-action="doExportTeams" data-value="csv"><span class="mi mi-xs">table_view</span> Full de càlcul (.csv)</button>
+    </div>`);
+}
+
+/** Exporta en el format triat amb les opcions del quadre de diàleg. */
+function exportTeamsAs(format) {
+  const teams = A.getTeams();
+  const levels = teams.useCompetency && el('teamExportLevels')?.checked !== false;
+  closeModal();
+  if (format === 'csv') A.exportTeamsCsv({ competency: levels });
+  else doExportTeams(levels);
 }
 
 /**
@@ -1023,21 +1048,33 @@ function doExportTeams(includeCompetency) {
   const teams = A.getTeams();
   const date = new Date().toLocaleDateString('ca-ES');
   const total = teams.groups.reduce((sum, group) => sum + group.length, 0);
-  const stats = teams.preferences
-    ? A.preferenceStats(teams.groups, teams.preferences.prefs, { avoid: teams.preferences.avoid })
+  const preferences = teams.preferences;
+  const stats = preferences
+    ? A.preferenceStats(teams.groups, preferences.prefs, {
+        avoid: preferences.avoid, attributes: preferences.attributes, criterion: preferences.criterion
+      })
     : null;
 
   const lines = [
     'EQUIPS DE TREBALL',
     `${date} · ${pluralize(teams.groups.length, 'equip')} · ${pluralize(total, 'alumne')}`
   ];
-  if (stats && stats.pct !== null) {
-    lines.push(`Preferències acomplertes: ${stats.pct}% (${stats.met} de ${stats.total})`);
+  // Grau d'assoliment de cada criteri, el mateix que es veu al panell.
+  if (stats) {
+    A.criteriaList(stats).forEach(row => {
+      lines.push(`${row.label}: ${row.pct === null ? '—' : row.pct + '%'} (${row.meta})`);
+    });
   }
   teams.groups.forEach((group, index) => {
     const meta = [pluralize(group.length, 'alumne')];
     if (includeCompetency) meta.push(`nivell mitjà ${groupMean(group).toFixed(2)}`);
     if (stats && stats.perGroup[index].pct !== null) meta.push(`${stats.perGroup[index].pct}% de preferències`);
+    (stats?.perGroup[index]?.composition || []).forEach(item => {
+      if (item && item.values.length) {
+        meta.push(`${item.short}: ${item.values.map(value =>
+          item.flag ? String(value.count) : `${value.label} ${value.count}`).join(', ')}`);
+      }
+    });
     lines.push('', '', teamName(index).toUpperCase(), meta.join(' · '), '');
     group.forEach((id, position) => {
       const name = A.studentName(id);
@@ -1097,7 +1134,7 @@ A.registerActions({
   loadSavedTeam: node => loadSavedTeam(+node.dataset.idx),
   deleteSavedTeam: node => deleteSavedTeam(+node.dataset.idx),
   exportTeams: () => exportTeams(),
-  doExportTeams: node => { doExportTeams(!!node.dataset.value); closeModal(); }
+  doExportTeams: node => exportTeamsAs(node.dataset.value)
 });
 
 Object.assign(A, {
@@ -1106,7 +1143,7 @@ Object.assign(A, {
   createTeams, teamViolations, renderTeamsPanel, renderTeamsSidebar, renderSavedTeams,
   moveStudentsToTeam, moveStudentToTeam, startRenameTeam, toggleTeamLock, toggleStudentLock,
   teamsHaveUnsavedChanges, guardUnsavedTeams, loadSavedTeam, appendSavedTeam, saveCurrentTeam, deleteSavedTeam,
-  exportTeams, doExportTeams
+  exportTeams, exportTeamsAs, doExportTeams
 });
 
 })(window.AulaMap);

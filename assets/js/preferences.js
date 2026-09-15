@@ -29,6 +29,18 @@ const MUTUAL_BONUS = 2;          // premi quan la tria és recíproca
 const AVOID_WEIGHT = 60;
 const PROPOSAL_CLASH_COST = 5;   // punts que resta cada separació trencada
 const CONSTRAINT_WEIGHT = 500;   // ajuntar/separar pesen més que cap preferència
+// Equilibri de la composició: cada parella d'un mateix grup d'origen, sexe o
+// necessitat educativa dins d'un equip resta punts, de manera que el
+// repartiment tendeix a escampar-los. Pesa una mica més que una tria de primera
+// opció i menys que una parella recíproca: els equips queden repartits sense
+// haver de renunciar a les preferències més fortes.
+const BALANCE_WEIGHT = 4;
+const BALANCE_QUALITY = 0.25;    // pes de l'equilibri en comparar dues formacions
+// Criteri "una tria per alumne": la primera preferència acomplerta suma, la
+// segona en descompta una part i la tercera ja fa nosa.
+const SPREAD_FIRST = 12;
+const SPREAD_EXTRA = 8;
+const SPREAD_TOP = 2;            // premi si la tria acomplerta és la primera de la llista
 const SHEETJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 /** Capçaleres que solen identificar cada mena de columna. */
@@ -38,6 +50,30 @@ const PREF_HINT = /(prefer|opci|tria|elecc|company|amic|amiga|choice|escull|treb
 // abans que PREF_HINT, perquè aquestes capçaleres també en duen les paraules.
 const AVOID_HINT = /(separa|evitar|allunya|apartar|incompatib|conflict|avoid|\bno\b)/i;
 const SKIP_HINT = /(marca.*temps|timestamp|correu|e-?mail|adre|hora|data|^id$|curs|grup|classe|nivell|puntuaci)/i;
+
+/**
+ * Dades de l'alumnat que no són noms i que, si el full les porta, es reparteixen
+ * de manera equilibrada entre els equips: el grup d'origen (sovint lletres o
+ * paraules d'un conjunt curt: "aire", "terra", "aigua"...), el sexe i les
+ * necessitats educatives.
+ *
+ * `flag` marca els atributs on només compta qui hi té alguna cosa escrita: a la
+ * columna de necessitats educatives s'escampen els alumnes marcats amb una "S",
+ * i les caselles buides no formen cap grup.
+ */
+const ATTRIBUTES = [
+  { key: 'group', label: "Grup d'origen", short: 'Grup', flag: false,
+    hint: /(grup|group|equip|casa|colla|origen|proced|tribu|element|color)/i },
+  { key: 'sex', label: 'Sexe', short: 'Sexe', flag: false,
+    hint: /(sexe|sex|g[eè]nere|gender|noi|noia|nen|nena)/i },
+  { key: 'nee', label: 'Necessitats educatives', short: 'NEE', flag: true,
+    hint: /(\bnee\b|\bnese\b|necessit|educativ|aprenentatg|suport|\bdua\b|diversitat|adaptaci)/i }
+];
+
+const ATTRIBUTE_KEYS = ATTRIBUTES.map(attribute => attribute.key);
+
+/** Definició d'un atribut a partir de la seva clau. */
+function attributeByKey(key) { return ATTRIBUTES.find(attribute => attribute.key === key) || null; }
 
 /* ── Noms: normalització i cerca ─────────────────────── */
 
@@ -97,6 +133,81 @@ function resolveName(value, index) {
     return { student: null, ambiguous: true };
   }
   return { student: null, ambiguous: false };
+}
+
+/* ── Altres dades de l'alumnat ───────────────────────── */
+
+/** Valor comparable: "Aire", "aire " i "AIRE" són el mateix grup. */
+function attributeKey(value) { return normalizeNameText(value); }
+
+/** Caselles que volen dir "no": una columna de NEE sol venir mig buida. */
+const NEGATIVE_MARK = /^(no|n|0|cap|fals|false)$/;
+
+/** La casella marca l'alumne? ("S", "sí", "x"... sí; buida o "no", no). */
+function isMarked(value) {
+  const key = attributeKey(value);
+  return !!key && !NEGATIVE_MARK.test(key);
+}
+
+/**
+ * Els valors d'una columna semblen una dada d'aquestes: textos curts que es
+ * repeteixen. Una columna de noms mai no ho compleix.
+ */
+function looksLikeAttribute(values) {
+  const filled = values.filter(Boolean);
+  if (!filled.length) return false;
+  if (filled.some(value => value.length > 24)) return false;
+  // Els noms de persona porten gairebé sempre cognom; "Aire" o "S", no.
+  if (filled.every(value => nameTokens(value).length > 1)) return false;
+  const distinct = new Set(filled.map(attributeKey)).size;
+  if (distinct > 12) return false;
+  // En un full sencer els valors s'han de repetir; amb poques files no hi ha
+  // prou mostra i mana la capçalera.
+  return filled.length < 8 || distinct <= Math.ceil(filled.length / 2);
+}
+
+/**
+ * Valors de cada atribut per alumne, a partir de les respostes ja conciliades
+ * amb la classe. Els atributs que no aporten res (columna buida, un sol valor
+ * en un atribut de marca) no es desen.
+ * @returns {Object<string,Object<string,string>>} { group:{ studentId:'Aire' }, ... }
+ */
+function buildAttributes(entries, roster) {
+  const ids = new Set(roster.map(student => student.id));
+  const attributes = {};
+  entries.forEach(entry => {
+    if (!entry.studentId || !ids.has(entry.studentId)) return;
+    ATTRIBUTES.forEach(attribute => {
+      const raw = String(entry.attrs?.[attribute.key] || '').trim();
+      if (!raw || (attribute.flag && !isMarked(raw))) return;
+      if (!attributes[attribute.key]) attributes[attribute.key] = {};
+      attributes[attribute.key][entry.studentId] = raw;
+    });
+  });
+  return attributes;
+}
+
+/**
+ * Recompte dels valors d'un atribut: quants alumnes en té cadascun.
+ * @returns {Array<{key:string, label:string, total:number}>}
+ */
+function attributeValues(attribute, map) {
+  const counts = new Map();
+  Object.values(map || {}).forEach(raw => {
+    const key = attribute.flag ? 'marcat' : attributeKey(raw);
+    if (!key) return;
+    const found = counts.get(key);
+    if (found) found.total++;
+    else counts.set(key, { key, label: attribute.flag ? attribute.short : String(raw).trim(), total: 1 });
+  });
+  return [...counts.values()].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
+}
+
+/** Atributs carregats que tenen alguna cosa a dir, en l'ordre de sempre. */
+function activeAttributes(attributes) {
+  return ATTRIBUTES
+    .map(attribute => ({ attribute, values: attributeValues(attribute, attributes?.[attribute.key]) }))
+    .filter(item => item.values.length && (item.attribute.flag || item.values.length > 1));
 }
 
 /* ── Estructura del full de respostes ────────────────── */
@@ -168,10 +279,28 @@ function autoMapping(rows, hasHeader) {
   }
   if (name === -1) name = usable[0] ?? -1;
 
+  // El grup d'origen, el sexe i les necessitats educatives només es poden
+  // endevinar per la capçalera, i encara cal que els valors siguin curts i
+  // repetits: així una columna de noms no es pren mai per una d'aquestes.
+  const attrs = {};
+  const taken = new Set();
+  ATTRIBUTES.forEach(attribute => { attrs[attribute.key] = -1; });
+  if (hasHeader) {
+    ATTRIBUTES.forEach(attribute => {
+      const found = usable.find(index => index !== name && !taken.has(index) &&
+        attribute.hint.test(labels[index]) && !PREF_HINT.test(labels[index]) &&
+        !AVOID_HINT.test(labels[index]) &&
+        looksLikeAttribute(columnValues(rows, hasHeader, index)));
+      if (found === undefined) return;
+      attrs[attribute.key] = found;
+      taken.add(found);
+    });
+  }
+
   const avoid = usable
-    .filter(index => index !== name && isAvoid(index) && !isSkipped(index))
+    .filter(index => index !== name && !taken.has(index) && isAvoid(index) && !isSkipped(index))
     .slice(0, MAX_AVOID_COLUMNS);
-  const free = index => index !== name && !avoid.includes(index);
+  const free = index => index !== name && !taken.has(index) && !avoid.includes(index);
 
   let prefs = hasHeader
     ? usable.filter(index => free(index) && PREF_HINT.test(labels[index]))
@@ -182,13 +311,13 @@ function autoMapping(rows, hasHeader) {
   }
   prefs = prefs.slice(0, MAX_PREF_COLUMNS);
   while (prefs.length < 3) prefs.push(-1);
-  return { name, prefs, avoid };
+  return { name, prefs, avoid, attrs };
 }
 
 /**
  * Files del full convertides a respostes.
  * Si algú respon dues vegades, es queda la resposta més nova.
- * @returns {{entries:Array<{name:string,choices:string[],avoid:string[]}>,
+ * @returns {{entries:Array<{name:string,choices:string[],avoid:string[],attrs:Object}>,
  *            duplicates:number, nameless:number}}
  */
 function readEntries(rows, hasHeader, mapping) {
@@ -201,10 +330,22 @@ function readEntries(rows, hasHeader, mapping) {
   const cells = (row, columns) => (columns || []).filter(index => index >= 0)
     .map(index => String(row[index] || '').trim())
     .filter(Boolean);
+  // Grup d'origen, sexe i necessitats educatives: una sola cel·la per columna.
+  const attrsOf = row => {
+    const values = {};
+    ATTRIBUTES.forEach(attribute => {
+      const index = mapping.attrs?.[attribute.key];
+      if (index === undefined || index < 0) return;
+      const value = String(row[index] || '').trim();
+      if (value) values[attribute.key] = value;
+    });
+    return values;
+  };
   dataRowsOf(rows, hasHeader).forEach(row => {
     const name = String(row[mapping.name] || '').trim();
     const choices = cells(row, mapping.prefs);
     const avoid = cells(row, mapping.avoid);
+    const attrs = attrsOf(row);
     if (!name) {
       if (choices.length || avoid.length) nameless++;
       return;
@@ -216,9 +357,10 @@ function readEntries(rows, hasHeader, mapping) {
       previous.name = name;
       if (choices.length) previous.choices = choices;
       if (avoid.length) previous.avoid = avoid;
+      if (Object.keys(attrs).length) previous.attrs = { ...previous.attrs, ...attrs };
       return;
     }
-    const entry = { name, choices, avoid, studentId: null };
+    const entry = { name, choices, avoid, attrs, studentId: null };
     seen.set(key, entry);
     entries.push(entry);
   });
@@ -391,12 +533,18 @@ function preferenceWeights(ids, prefs, options = {}) {
     weights[j][i] += value;
   };
 
-  Object.entries(prefs || {}).forEach(([studentId, list]) => {
-    (list || []).forEach((targetId, rank) => {
-      add(studentId, targetId, ranked ? (RANK_WEIGHTS[rank] ?? TAIL_WEIGHT) : 1);
-      if ((prefs[targetId] || []).includes(studentId)) add(studentId, targetId, MUTUAL_BONUS / 2);
+  // Amb el criteri "una tria per alumne" les tries no poden pesar per parelles:
+  // el que val no és quantes n'hi ha juntes, sinó que n'hi hagi just una. En
+  // aquest cas les tries les compta `spreadScore` i aquí només queden les
+  // separacions i els conjunts del docent.
+  if (options.includePrefs !== false) {
+    Object.entries(prefs || {}).forEach(([studentId, list]) => {
+      (list || []).forEach((targetId, rank) => {
+        add(studentId, targetId, ranked ? (RANK_WEIGHTS[rank] ?? TAIL_WEIGHT) : 1);
+        if ((prefs[targetId] || []).includes(studentId)) add(studentId, targetId, MUTUAL_BONUS / 2);
+      });
     });
-  });
+  }
 
   // Totes les separacions pesen igual: qui és el primer de la llista i qui el
   // segon no fa cap diferència quan es demana no coincidir.
@@ -415,6 +563,111 @@ function preferenceWeights(ids, prefs, options = {}) {
     (constraints[REL_SEPARATE] || []).forEach(set => eachPair(set.students || [], -CONSTRAINT_WEIGHT));
   }
   return { ids, index, weights };
+}
+
+/* ── Model de puntuació ──────────────────────────────── */
+
+/**
+ * Valors d'un atribut convertits a codis numèrics, en el mateix ordre que
+ * `ids`. Els alumnes sense valor reben -1 i no compten per a l'equilibri.
+ * @returns {Array<{key:string, codes:number[]}>}
+ */
+function balanceCodes(ids, attributes, enabled) {
+  if (!attributes) return [];
+  return ATTRIBUTES
+    .filter(attribute => attributes[attribute.key] && (!enabled || enabled[attribute.key] !== false))
+    .map(attribute => {
+      const map = attributes[attribute.key];
+      const seen = new Map();
+      const codes = ids.map(id => {
+        const raw = map[id];
+        if (!raw || (attribute.flag && !isMarked(raw))) return -1;
+        const value = attribute.flag ? 'marcat' : attributeKey(raw);
+        if (!value) return -1;
+        if (!seen.has(value)) seen.set(value, seen.size);
+        return seen.get(value);
+      });
+      return { key: attribute.key, codes, values: seen.size };
+    })
+    // Un sol valor per a tothom no equilibra res; una marca sí que s'escampa.
+    .filter(item => item.values > 1 || (attributeByKey(item.key)?.flag && item.codes.some(code => code >= 0)));
+}
+
+/**
+ * Tot el que necessita el repartidor per puntuar un equip: la matriu de
+ * parelles, els codis d'equilibri i el criteri d'èxit triat.
+ */
+function preferenceModel(ids, options = {}) {
+  const criterion = options.criterion === 'spread' ? 'spread' : 'max';
+  const ranked = options.ranked !== false;
+  const model = preferenceWeights(ids, options.prefs || {}, {
+    ranked,
+    avoid: options.avoid,
+    constraints: options.constraints,
+    includePrefs: criterion !== 'spread'
+  });
+  model.criterion = criterion;
+  model.ranked = ranked;
+  model.prefs = options.prefs || {};
+  model.balance = balanceCodes(ids, options.attributes, options.balance);
+  return model;
+}
+
+/**
+ * Parelles que comparteixen grup d'origen, sexe o marca de necessitats dins
+ * d'un mateix equip. Minimitzar-les és exactament repartir cada valor entre
+ * tots els equips tan igualadament com les mides permetin.
+ */
+function balancePenalty(group, model) {
+  if (!model.balance.length) return 0;
+  let penalty = 0;
+  for (const attribute of model.balance) {
+    const seen = new Map();
+    for (const studentId of group) {
+      const code = attribute.codes[model.index.get(studentId)];
+      if (code < 0) continue;
+      const count = seen.get(code) || 0;
+      penalty += count * BALANCE_WEIGHT;
+      seen.set(code, count + 1);
+    }
+  }
+  return penalty;
+}
+
+/**
+ * Criteri "una tria per alumne": la primera preferència acomplerta suma, la
+ * segona en descompta bona part i la tercera ja resta. Així el repartiment
+ * escampa les tries en comptes de deixar que uns quants se les quedin totes.
+ */
+function spreadScore(group, model) {
+  const inside = new Set(group);
+  let score = 0;
+  for (const studentId of group) {
+    const list = model.prefs[studentId];
+    if (!list || !list.length) continue;
+    let met = 0;
+    let top = false;
+    for (let rank = 0; rank < list.length; rank++) {
+      if (!inside.has(list[rank])) continue;
+      met++;
+      if (rank === 0) top = true;
+    }
+    if (!met) continue;
+    score += SPREAD_FIRST - (met - 1) * SPREAD_EXTRA + (model.ranked && top ? SPREAD_TOP : 0);
+  }
+  return score;
+}
+
+/** Qualitat d'un equip sencer: afinitats, equilibri i criteri d'èxit. */
+function groupScore(group, model) {
+  let score = 0;
+  for (let i = 0; i < group.length; i++) {
+    const row = model.weights[model.index.get(group[i])];
+    for (let j = i + 1; j < group.length; j++) score += row[model.index.get(group[j])];
+  }
+  score -= balancePenalty(group, model);
+  if (model.criterion === 'spread') score += spreadScore(group, model);
+  return score;
 }
 
 /* ── Repartiment ─────────────────────────────────────── */
@@ -441,33 +694,17 @@ function shuffled(list, random) {
   return copy;
 }
 
-/** Afinitat d'un alumne amb els membres d'un equip. */
-function affinity(studentId, group, model, excludeId) {
-  const row = model.weights[model.index.get(studentId)];
-  let sum = 0;
-  for (const other of group) {
-    if (other === excludeId || other === studentId) continue;
-    sum += row[model.index.get(other)];
-  }
-  return sum;
-}
-
-/** Suma de les afinitats internes de tots els equips (el darrer calaix no compta). */
+/** Suma de la qualitat de tots els equips (el darrer calaix no compta). */
 function totalScore(groups, model, realGroups) {
   let total = 0;
-  for (let g = 0; g < realGroups; g++) {
-    const group = groups[g];
-    for (let i = 0; i < group.length; i++) {
-      const row = model.weights[model.index.get(group[i])];
-      for (let j = i + 1; j < group.length; j++) total += row[model.index.get(group[j])];
-    }
-  }
+  for (let g = 0; g < realGroups; g++) total += groupScore(groups[g], model);
   return total;
 }
 
 /** Construcció voraç: a cada pas, la parella alumne–equip que més suma. */
 function greedyAssign(ids, model, buckets, realGroups, random) {
   const groups = buckets.map(() => []);
+  const scores = buckets.map(() => 0);
   const pending = new Set(shuffled(ids, random));
   while (pending.size) {
     let bestStudent = null;
@@ -476,7 +713,12 @@ function greedyAssign(ids, model, buckets, realGroups, random) {
     for (const studentId of pending) {
       for (let g = 0; g < groups.length; g++) {
         if (groups[g].length >= buckets[g]) continue;
-        const gain = g < realGroups ? affinity(studentId, groups[g], model) : 0;
+        let gain = 0;
+        if (g < realGroups) {
+          groups[g].push(studentId);
+          gain = groupScore(groups[g], model) - scores[g];
+          groups[g].pop();
+        }
         // Es completen els equips començats abans d'obrir-ne un altre.
         const score = gain - (groups[g].length ? 0 : 0.001) + random() * 0.0005;
         if (score > bestScore) { bestScore = score; bestStudent = studentId; bestGroup = g; }
@@ -484,25 +726,36 @@ function greedyAssign(ids, model, buckets, realGroups, random) {
     }
     if (bestStudent === null) break;
     groups[bestGroup].push(bestStudent);
+    if (bestGroup < realGroups) scores[bestGroup] = groupScore(groups[bestGroup], model);
     pending.delete(bestStudent);
   }
   return groups;
 }
 
-/** Refinament: intercanvis entre equips mentre el resultat millori. */
+/**
+ * Refinament: intercanvis entre equips mentre el resultat millori.
+ *
+ * Es puntuen els dos equips sencers, no la parella que es mou: l'equilibri de
+ * la composició i el criteri d'"una tria per alumne" depenen de qui més hi ha
+ * a l'equip, i no es poden repartir entre parelles.
+ */
 function improveAssignment(groups, model, realGroups, rounds) {
+  const scoreOf = g => (g < realGroups ? groupScore(groups[g], model) : 0);
+  const scores = groups.map((_, g) => scoreOf(g));
   for (let round = 0; round < rounds; round++) {
     let bestDelta = 1e-9;
     let move = null;
     for (let gi = 0; gi < groups.length; gi++) {
       for (let gj = gi + 1; gj < groups.length; gj++) {
         for (let ai = 0; ai < groups[gi].length; ai++) {
-          const a = groups[gi][ai];
           for (let bj = 0; bj < groups[gj].length; bj++) {
+            const a = groups[gi][ai];
             const b = groups[gj][bj];
-            const left = gi < realGroups ? affinity(b, groups[gi], model, a) - affinity(a, groups[gi], model, a) : 0;
-            const right = gj < realGroups ? affinity(a, groups[gj], model, b) - affinity(b, groups[gj], model, b) : 0;
-            const delta = left + right;
+            groups[gi][ai] = b;
+            groups[gj][bj] = a;
+            const delta = scoreOf(gi) + scoreOf(gj) - scores[gi] - scores[gj];
+            groups[gi][ai] = a;
+            groups[gj][bj] = b;
             if (delta > bestDelta) { bestDelta = delta; move = [gi, ai, gj, bj]; }
           }
         }
@@ -513,6 +766,8 @@ function improveAssignment(groups, model, realGroups, rounds) {
     const swap = groups[gi][ai];
     groups[gi][ai] = groups[gj][bj];
     groups[gj][bj] = swap;
+    scores[gi] = scoreOf(gi);
+    scores[gj] = scoreOf(gj);
   }
 }
 
@@ -525,17 +780,22 @@ function improveAssignment(groups, model, realGroups, rounds) {
  * mil·lisegons i el resultat sol ser òptim o molt a prop.
  *
  * @param {{ids:string[], prefs:Object, avoid?:Object, sizes:number[], leftover?:number,
- *          ranked?:boolean, constraints?:Object, seed?:number, restarts?:number}} options
+ *          ranked?:boolean, constraints?:Object, attributes?:Object, balance?:Object,
+ *          criterion?:'max'|'spread', seed?:number, restarts?:number}} options
  * @returns {{groups:string[][], leftover:string[], score:number}}
  */
 function optimizePreferenceGroups(options) {
   const ids = (options.ids || []).slice();
   const sizes = (options.sizes || []).slice();
   const leftoverSize = Math.max(0, options.leftover || 0);
-  const model = preferenceWeights(ids, options.prefs || {}, {
+  const model = preferenceModel(ids, {
+    prefs: options.prefs,
     ranked: options.ranked !== false,
     avoid: options.avoid,
-    constraints: options.constraints
+    constraints: options.constraints,
+    attributes: options.attributes,
+    balance: options.balance,
+    criterion: options.criterion
   });
   if (!ids.length || !sizes.length) return { groups: sizes.map(() => []), leftover: ids, score: 0 };
 
@@ -571,10 +831,16 @@ function optimizePreferenceGroups(options) {
  * repartiment. Qui es queda sense equip no comparteix taula amb ningú: cap
  * preferència seva es dóna per acomplerta, ni cap separació per trencada.
  *
+ * També diu quants alumnes en tenen exactament una (el criteri d'"una tria per
+ * alumne") i com de repartits queden el grup d'origen, el sexe i les
+ * necessitats educatives.
+ *
  * @returns {{met:number, total:number, pct:number|null, perStudent:Object,
  *            perGroup:Array, answered:number, unhappy:number, mutual:number,
+ *            alone:number, crowded:number, alonePct:number|null,
  *            avoidKept:number, avoidTotal:number, avoidBroken:number,
- *            avoidPct:number|null, clashes:Array<[string,string]>}}
+ *            avoidPct:number|null, clashes:Array<[string,string]>,
+ *            balance:Array, criterion:string, mainPct:number|null}}
  */
 function preferenceStats(groups, prefs, options = {}) {
   const avoid = options.avoid || {};
@@ -590,6 +856,8 @@ function preferenceStats(groups, prefs, options = {}) {
   let answered = 0;
   let unhappy = 0;
   let mutual = 0;
+  let alone = 0;
+  let crowded = 0;
   let avoidTotal = 0;
   let avoidBroken = 0;
   const clashes = [];
@@ -618,6 +886,8 @@ function preferenceStats(groups, prefs, options = {}) {
     if (list.length) {
       answered++;
       if (!metIds.length) unhappy++;
+      else if (metIds.length === 1) alone++;
+      else crowded++;
     }
     if (index >= 0) {
       perGroup[index].met += metIds.length;
@@ -636,26 +906,113 @@ function preferenceStats(groups, prefs, options = {}) {
 
   perGroup.forEach(entry => { entry.pct = entry.total ? Math.round(entry.met * 100 / entry.total) : null; });
   const avoidKept = avoidTotal - avoidBroken;
+  const pct = total ? Math.round(met * 100 / total) : null;
+  const avoidPct = avoidTotal ? Math.round(avoidKept * 100 / avoidTotal) : null;
+  const alonePct = answered ? Math.round(alone * 100 / answered) : null;
+  const balance = balanceStats(groups, options.attributes);
+  const criterion = options.criterion === 'spread' ? 'spread' : 'max';
+  balance.forEach((entry, index) => {
+    // Cada equip porta la seva composició a mà per al panell i el llenç.
+    perGroup.forEach((group, position) => {
+      if (!group.composition) group.composition = [];
+      group.composition[index] = { key: entry.key, short: entry.short, flag: entry.flag,
+                                   values: entry.values.map(value => ({ label: value.label, count: value.perGroup[position] }))
+                                     .filter(value => value.count > 0) };
+    });
+  });
   return {
     met, total, answered, unhappy, mutual, perStudent, perGroup,
-    avoidKept, avoidTotal, avoidBroken, clashes,
-    avoidPct: avoidTotal ? Math.round(avoidKept * 100 / avoidTotal) : null,
-    pct: total ? Math.round(met * 100 / total) : null
+    alone, crowded, alonePct, balance, criterion,
+    avoidKept, avoidTotal, avoidBroken, clashes, avoidPct, pct,
+    // Xifra que encapçala els indicadors, segons el criteri d'èxit triat.
+    mainPct: criterion === 'spread' ? (alonePct === null ? avoidPct : alonePct)
+                                    : (pct === null ? avoidPct : pct)
   };
 }
 
 /**
- * Qualitat comparable de dues formacions: el percentatge de preferències
- * acomplertes, descomptant cada separació trencada. Una separació sense
- * respectar es paga cara, però no tant com per acceptar qualsevol repartiment.
+ * Parelles mínimes possibles d'un valor repartit entre els equips: la fita amb
+ * què es mesura com de bo és l'equilibri assolit.
  */
+function minimumPairs(total, teams) {
+  if (teams < 1) return total * (total - 1) / 2;
+  const base = Math.floor(total / teams);
+  const extra = total % teams;
+  return teams * base * (base - 1) / 2 + extra * base;
+}
+
+/**
+ * Com de repartits queden el grup d'origen, el sexe i les necessitats
+ * educatives. El 100% és el millor repartiment possible amb aquestes mides
+ * d'equip; el 0%, tots els que comparteixen valor al mateix equip.
+ *
+ * @returns {Array<{key:string, label:string, short:string, flag:boolean,
+ *                  pct:number|null, values:Array}>}
+ */
+function balanceStats(groups, attributes) {
+  if (!attributes) return [];
+  const teams = Math.max(1, groups.length);
+  return ATTRIBUTES.map(attribute => {
+    const map = attributes[attribute.key];
+    if (!map || !Object.keys(map).length) return null;
+    const counts = new Map();
+    groups.forEach((group, index) => group.forEach(id => {
+      const raw = map[id];
+      if (!raw || (attribute.flag && !isMarked(raw))) return;
+      const key = attribute.flag ? 'marcat' : attributeKey(raw);
+      if (!key) return;
+      let entry = counts.get(key);
+      if (!entry) {
+        entry = { key, label: attribute.flag ? attribute.short : String(raw).trim(),
+                  total: 0, perGroup: groups.map(() => 0) };
+        counts.set(key, entry);
+      }
+      entry.total++;
+      entry.perGroup[index]++;
+    }));
+    const values = [...counts.values()].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
+    if (!values.length) return null;
+    let pairs = 0;
+    let best = 0;
+    let worst = 0;
+    values.forEach(entry => {
+      entry.perGroup.forEach(count => { pairs += count * (count - 1) / 2; });
+      best += minimumPairs(entry.total, teams);
+      worst += entry.total * (entry.total - 1) / 2;
+    });
+    return {
+      key: attribute.key, label: attribute.label, short: attribute.short, flag: attribute.flag,
+      values, pairs,
+      pct: worst > best ? Math.round((worst - pairs) * 100 / (worst - best)) : 100
+    };
+  }).filter(Boolean);
+}
+
+/** Mitjana dels indicadors d'equilibri, o `null` si no n'hi ha cap. */
+function balanceAverage(balance) {
+  const list = (balance || []).filter(entry => entry.pct !== null);
+  if (!list.length) return null;
+  return Math.round(list.reduce((sum, entry) => sum + entry.pct, 0) / list.length);
+}
+
+/**
+ * Qualitat comparable de dues formacions: el percentatge del criteri triat,
+ * descomptant cada separació trencada i sumant-hi una part de l'equilibri de la
+ * composició. Una separació sense respectar es paga cara, però no tant com per
+ * acceptar qualsevol repartiment.
+ */
+function qualityScore(pct, broken, balance) {
+  return (pct || 0) - (broken || 0) * PROPOSAL_CLASH_COST +
+    (balance === null || balance === undefined ? 0 : balance * BALANCE_QUALITY);
+}
+
 function proposalQuality(stats) {
-  return (stats.pct || 0) - (stats.avoidBroken || 0) * PROPOSAL_CLASH_COST;
+  return qualityScore(stats.mainPct, stats.avoidBroken, balanceAverage(stats.balance));
 }
 
 /** El mateix, per a la millor formació desada, que només en guarda el recompte. */
 function storedQuality(best) {
-  return (best.pct || 0) - (best.broken || 0) * PROPOSAL_CLASH_COST;
+  return qualityScore(best.pct, best.broken, best.balance === undefined ? null : best.balance);
 }
 
 /** "3 separacions" / "1 separació". */
@@ -703,11 +1060,102 @@ function avoidChip(entry, name, nameFor) {
 
 function matchBar(pct) {
   const value = pct === null ? 0 : pct;
-  const tone = pct === null ? 'none' : (pct >= 75 ? 'good' : pct >= 40 ? 'medium' : 'bad');
+  const tone = pctTone(pct);
   return `<div class="pref-bar"><span class="pref-${tone}" style="width:${value}%"></span></div>`;
 }
 
+function pctTone(pct) {
+  if (pct === null || pct === undefined) return 'none';
+  return pct >= 75 ? 'good' : pct >= 40 ? 'medium' : 'bad';
+}
+
+/**
+ * Grau d'assoliment de cada criteri: les tries acomplertes, el repartiment
+ * d'una tria per alumne, les separacions respectades i l'equilibri de la
+ * composició dels equips. El docent el veu igual a l'assistent i al panell
+ * lateral, i es refà a cada canvi.
+ *
+ * @returns {Array<{label:string, pct:number|null, meta:string, main:boolean}>}
+ */
+function criteriaList(stats) {
+  const rows = [];
+  if (stats.total) {
+    rows.push({
+      key: 'prefs',
+      label: 'Preferències acomplertes',
+      pct: stats.pct,
+      meta: `${stats.met} de ${stats.total} tries · ${mutualLabel(stats.mutual)}`,
+      main: stats.criterion !== 'spread'
+    });
+  }
+  if (stats.answered) {
+    rows.push({
+      key: 'alone',
+      label: 'Amb una sola tria acomplerta',
+      pct: stats.alonePct,
+      meta: [`${stats.alone} amb una`, `${stats.crowded} amb més d'una`,
+             `${stats.unhappy} sense cap`].join(' · '),
+      main: stats.criterion === 'spread'
+    });
+  }
+  if (stats.avoidTotal) {
+    rows.push({
+      key: 'avoid',
+      label: 'Separacions respectades',
+      pct: stats.avoidPct,
+      meta: separationsKept(stats.avoidKept, stats.avoidTotal),
+      main: false
+    });
+  }
+  (stats.balance || []).forEach(entry => {
+    rows.push({
+      key: `balance:${entry.key}`,
+      label: `Equilibri · ${entry.label}`,
+      pct: entry.pct,
+      meta: entry.values.map(value => `${value.label} ${value.total}`).join(' · '),
+      main: false
+    });
+  });
+  return rows;
+}
+
+/** Els indicadors de criteris, en files amb barra i detall. */
+function criteriaHtml(stats) {
+  const rows = criteriaList(stats);
+  if (!rows.length) return '';
+  return `<div class="pref-criteria">${rows.map(row => `
+    <div class="pref-criterion${row.main ? ' pref-criterion-main' : ''}">
+      <div class="pref-criterion-head">
+        <span>${esc(row.label)}</span>
+        <b class="pref-${pctTone(row.pct)}">${row.pct === null ? '—' : row.pct + '%'}</b>
+      </div>
+      ${matchBar(row.pct)}
+      <div class="pref-criterion-meta">${esc(row.meta)}</div>
+    </div>`).join('')}</div>`;
+}
+
+/** "Grup: aire 2 · terra 2 · Sexe: H 2 · D 2": com ha quedat compost un equip. */
+function compositionHtml(entry) {
+  const parts = (entry?.composition || []).filter(item => item && item.values.length).map(item =>
+    `<span><b>${esc(item.short)}</b> ${esc(item.values.map(value =>
+      item.flag ? String(value.count) : `${value.label} ${value.count}`).join(' · '))}</span>`);
+  return parts.length ? `<div class="pref-compo">${parts.join('')}</div>` : '';
+}
+
 function storedPreferences() { return A.getTeams().preferences || null; }
+
+/** El detall dels criteris queda obert o tancat entre repintades del panell. */
+let criteriaOpen = false;
+
+/** Opcions amb què s'han de comptar els indicadors d'unes preferències desades. */
+function statsOptions(stored, extra = {}) {
+  return {
+    avoid: stored.avoid,
+    attributes: stored.attributes,
+    criterion: stored.criterion,
+    ...extra
+  };
+}
 
 /**
  * Indicadors per al panell lateral d'equips. Retorna `null` quan la
@@ -716,28 +1164,25 @@ function storedPreferences() { return A.getTeams().preferences || null; }
 function preferenceTeamView(groups) {
   const stored = storedPreferences();
   if (!stored || !groups || !groups.length) return null;
-  const stats = preferenceStats(groups, stored.prefs, { avoid: stored.avoid });
-  if (!stats.total && !stats.avoidTotal) return null;
-  const meta = [];
-  if (stats.total) meta.push(`${stats.met} de ${stats.total} tries`, mutualLabel(stats.mutual));
-  if (stats.unhappy) meta.push(`${stats.unhappy} sense cap tria acomplerta`);
-  if (stats.avoidTotal) {
-    meta.push(separationsKept(stats.avoidKept, stats.avoidTotal));
-  }
-  // Sense cap tria indicada, el titular passa a ser el de les separacions.
-  const headline = stats.total
-    ? { label: 'Preferències acomplertes', pct: stats.pct, tone: matchTone(stats.met, stats.total) }
-    : { label: 'Separacions respectades', pct: stats.avoidPct, tone: matchTone(stats.avoidKept, stats.avoidTotal) };
+  const stats = preferenceStats(groups, stored.prefs, statsOptions(stored));
+  if (!stats.total && !stats.avoidTotal && !stats.balance.length) return null;
+  const rows = criteriaList(stats);
+  const headline = rows.find(row => row.main) || rows[0];
   return {
     stats,
     summary: `<div class="pref-summary">
         <div class="pref-summary-head">
-          <span><span class="mi mi-xs">diversity_3</span> ${headline.label}</span>
-          <b class="pref-${headline.tone}">${headline.pct}%</b>
+          <span><span class="mi mi-xs">diversity_3</span> ${esc(headline.label)}</span>
+          <b class="pref-${pctTone(headline.pct)}">${headline.pct === null ? '—' : headline.pct + '%'}</b>
         </div>
         ${matchBar(headline.pct)}
-        <div class="pref-summary-meta">${meta.join(' · ')}</div>
-      </div>`,
+        <div class="pref-summary-meta">${esc(headline.meta)}</div>
+      </div>
+      ${rows.length > 1 ? `<details class="pref-criteria-box"${criteriaOpen ? ' open' : ''}>
+        <summary data-action="prefToggleCriteria"><span class="mi mi-xs">expand_more</span> Grau d'assoliment de cada criteri</summary>
+        ${criteriaHtml(stats)}
+      </details>` : ''}`,
+    composition: index => compositionHtml(stats.perGroup[index]),
     group: index => {
       const entry = stats.perGroup[index];
       if (!entry) return '';
@@ -761,13 +1206,14 @@ function preferenceTeamView(groups) {
  * acomplertes es guarda per poder-hi tornar.
  */
 function rememberFormation(teams, stats) {
-  if (!stats || (!stats.total && !stats.avoidTotal) || !teams.groups?.length) return;
+  if (!stats || (!stats.total && !stats.avoidTotal && !stats.balance.length) || !teams.groups?.length) return;
   const best = teams.preferences.best;
   if (best && proposalQuality(stats) <= storedQuality(best)) return;
   teams.preferences.best = {
     groups: teams.groups.map(group => group.slice()),
-    pct: stats.pct === null ? 0 : stats.pct,
+    pct: stats.mainPct === null ? 0 : stats.mainPct,
     broken: stats.avoidBroken,
+    balance: balanceAverage(stats.balance),
     updated: formattedNow()
   };
   A.saveState();
@@ -808,25 +1254,32 @@ function renderPreferencePanel() {
   const stored = storedPreferences();
   if (!stored) {
     box.innerHTML = `<p class="panel-hint" style="margin-bottom:6px">Carrega el full de respostes del formulari (nom, companys amb qui voldria
-      treballar i, si n'hi ha, columnes de separació) i l'aplicació proposarà els equips que
-      acompleixin més preferències sense ajuntar qui ha demanat de no coincidir.</p>`;
+      treballar i, si n'hi ha, columnes de separació, grup d'origen, sexe o necessitats educatives)
+      i l'aplicació proposarà els equips que acompleixin més preferències sense ajuntar qui ha
+      demanat de no coincidir i repartint la composició del grup.</p>`;
     return;
   }
   const teams = A.getTeams();
   const answered = new Set([...Object.keys(stored.prefs), ...Object.keys(stored.avoid || {})]).size;
-  const stats = teams.groups?.length ? preferenceStats(teams.groups, stored.prefs, { avoid: stored.avoid }) : null;
-  const current = stats && stats.total ? stats.pct : null;
+  const stats = teams.groups?.length ? preferenceStats(teams.groups, stored.prefs, statsOptions(stored)) : null;
+  const current = stats ? stats.mainPct : null;
   rememberFormation(teams, stats);
 
   const best = stored.best;
   const canRestore = !!best && (!stats || storedQuality(best) > proposalQuality(stats));
+  const loadedAttributes = activeAttributes(stored.attributes)
+    .map(item => `${item.attribute.label.toLowerCase()} (${item.attribute.flag
+      ? `${pluralize(item.values[0].total, 'alumne')} ${item.values[0].total === 1 ? 'marcat' : 'marcats'}`
+      : pluralize(item.values.length, 'valor')})`)
+    .join(' · ');
   box.innerHTML = `<div class="pref-status">
       <div class="pref-status-head">
         <span><span class="mi mi-xs">check_circle</span> ${pluralize(answered, 'resposta', 'respostes')} carregades</span>
-        ${current === null ? '' : `<b class="pref-${matchTone(stats.met, stats.total)}">${current}%</b>`}
+        ${current === null ? '' : `<b class="pref-${pctTone(current)}">${current}%</b>`}
       </div>
       <div class="pref-status-meta">${esc(stored.source || 'Full de preferències')}${stored.updated ? ` · ${esc(stored.updated)}` : ''}${stored.unresolved?.length ? ` · ${pluralize(stored.unresolved.length, 'nom')} sense identificar` : ''}</div>
       ${stats && stats.avoidTotal ? `<div class="pref-status-meta pref-${stats.avoidBroken ? 'bad' : 'good'}">${separationsKept(stats.avoidKept, stats.avoidTotal)}</div>` : ''}
+      ${loadedAttributes ? `<div class="pref-status-meta">S'equilibra per ${esc(loadedAttributes)}</div>` : ''}
       <div class="pref-status-actions">
         <button class="btn btn-sm" data-action="prefRegenerate"><span class="mi mi-xs">auto_awesome</span> Tornar a proposar</button>
         <button class="btn btn-sm btn-danger" data-action="prefForget" title="Esborrar les preferències carregades"><span class="mi mi-xs">delete</span></button>
@@ -862,11 +1315,16 @@ function defaultTeamCount(total) {
 }
 
 function newWizard() {
+  const balance = {};
+  ATTRIBUTE_KEYS.forEach(key => { balance[key] = true; });
+  const attrs = {};
+  ATTRIBUTE_KEYS.forEach(key => { attrs[key] = -1; });
   return {
     step: 1, text: '', source: '', rows: [], hasHeader: true,
-    mapping: { name: -1, prefs: [-1, -1, -1], avoid: [] },
+    mapping: { name: -1, prefs: [-1, -1, -1], avoid: [], attrs },
     entries: [], duplicates: 0, nameless: 0, match: null,
     rosterMode: 'merge', newConfigName: '', roster: [], prefs: {}, avoid: {}, unresolved: [],
+    attributes: {}, balance, criterion: 'max',
     plan: { mode: 'count', count: 4, size: 4, remainder: 'balanced' },
     ranked: true, useConstraints: true, useAvoid: true,
     proposal: null, best: null, attempts: 0, picked: null, fromStored: false
@@ -885,6 +1343,9 @@ function startWizard(options = {}) {
     W.roster = students.map(student => ({ id: student.id, name: student.name, isNew: false }));
     W.prefs = stored.prefs;
     W.avoid = stored.avoid || {};
+    W.attributes = stored.attributes || {};
+    W.balance = { ...W.balance, ...(stored.balance || {}) };
+    W.criterion = stored.criterion === 'spread' ? 'spread' : 'max';
     W.unresolved = (stored.unresolved || []).map(name => ({ name, count: 1, ambiguous: false }));
     W.plan.count = defaultTeamCount(W.roster.length);
     W.step = 4;
@@ -1052,8 +1513,10 @@ function stepColumns() {
       ${labels.map((_, index) => option(index, selected)).join('')}
     </select>`;
 
+  const attrColumns = ATTRIBUTE_KEYS.map(key => W.mapping.attrs[key]).filter(index => index >= 0);
   const roleClass = index => index === W.mapping.name ? ' class="pref-col-name"'
     : W.mapping.avoid.includes(index) ? ' class="pref-col-avoid"'
+    : attrColumns.includes(index) ? ' class="pref-col-attr"'
     : W.mapping.prefs.includes(index) ? ' class="pref-col-pref"' : '';
 
   const preview = rows.slice(0, 5).map(row => `<tr>${labels.map((_, index) =>
@@ -1064,6 +1527,22 @@ function stepColumns() {
 
   const avoidRows = W.mapping.avoid.map((selected, position) => `
     <div class="field"><label>Separar ${position + 1}</label>${columnSelect('avoid', selected, position, true)}</div>`).join('');
+
+  // Cada columna que no és de noms es diu què conté: així un full amb l'ordre
+  // canviat o amb capçaleres inesperades es pot assignar igualment a mà.
+  const attrRows = ATTRIBUTES.map(attribute => {
+    const selected = W.mapping.attrs[attribute.key];
+    const values = selected >= 0
+      ? [...new Set(columnValues(W.rows, W.hasHeader, selected).filter(Boolean))]
+      : [];
+    const sample = values.slice(0, 6).join(', ') + (values.length > 6 ? '…' : '');
+    return `<div class="field"><label>${esc(attribute.label)}</label>
+      <select data-change="prefSetColumn" data-role="attr" data-key="${attribute.key}">
+        <option value="-1"${selected < 0 ? ' selected' : ''}>— cap —</option>
+        ${labels.map((_, index) => option(index, selected)).join('')}
+      </select>
+      ${values.length ? `<span class="pref-field-note">${pluralize(values.length, 'valor')}: ${esc(sample)}</span>` : ''}</div>`;
+  }).join('');
 
   return wizardShell(`
     <p class="modal-note">${pluralize(rows.length, 'fila', 'files')} de dades i ${pluralize(labels.length, 'columna', 'columnes')}.
@@ -1086,6 +1565,11 @@ function stepColumns() {
     ${W.mapping.avoid.length < MAX_AVOID_COLUMNS
       ? `<button class="btn btn-sm" data-action="prefAddAvoidColumn"><span class="mi mi-xs">person_off</span> ${W.mapping.avoid.length ? 'Una separació més' : 'Afegir una columna de separació'}</button>`
       : ''}
+    <p class="modal-note" style="margin-top:12px">Si el full porta altres dades de l'alumnat, digues quina columna
+      conté cadascuna: el <b>grup d'origen</b> (lletres o paraules com ara «aire», «terra», «aigua»...),
+      el <b>sexe</b> i les <b>necessitats educatives</b> (normalment una «S»). Els equips es formaran
+      repartint-les de manera equilibrada. Les que no hi siguin, deixa-les en «cap».</p>
+    <div class="pref-grid">${attrRows}</div>
     <div class="pref-preview"><table>
       <thead><tr>${labels.map((label, index) =>
         `<th${roleClass(index)}>${esc(label)}</th>`).join('')}</tr></thead>
@@ -1095,10 +1579,11 @@ function stepColumns() {
      <button class="btn btn-primary" data-action="prefColumnsNext">Continuar <span class="mi mi-xs">arrow_forward</span></button>`);
 }
 
-function setColumn(role, position, value) {
+function setColumn(role, position, value, key) {
   const index = parseInt(value, 10);
   if (role === 'name') W.mapping.name = index;
   else if (role === 'avoid') W.mapping.avoid[position] = index;
+  else if (role === 'attr') W.mapping.attrs[key] = index;
   else W.mapping.prefs[position] = index;
   renderWizard();
 }
@@ -1112,9 +1597,17 @@ function toggleHeader(checked) {
 function columnsNext() {
   if (W.mapping.name < 0) { toast('Indica quina columna té el nom', 'error'); return; }
   // Una columna no pot fer dos papers alhora: la separació mana sobre la
-  // preferència, i cap de les dues pot ser la columna del nom.
-  W.mapping.avoid = W.mapping.avoid.map(index => (index === W.mapping.name ? -1 : index));
-  const taken = new Set(W.mapping.avoid.filter(index => index >= 0));
+  // preferència, les dades de l'alumnat manen sobre totes dues, i cap d'elles
+  // pot ser la columna del nom.
+  const taken = new Set();
+  ATTRIBUTE_KEYS.forEach(key => {
+    const index = W.mapping.attrs[key];
+    if (index === W.mapping.name || taken.has(index)) W.mapping.attrs[key] = -1;
+    else if (index >= 0) taken.add(index);
+  });
+  W.mapping.avoid = W.mapping.avoid.map(index =>
+    (index === W.mapping.name || taken.has(index) ? -1 : index));
+  W.mapping.avoid.filter(index => index >= 0).forEach(index => taken.add(index));
   W.mapping.prefs = W.mapping.prefs.map(index =>
     (index === W.mapping.name || taken.has(index) ? -1 : index));
 
@@ -1133,13 +1626,14 @@ function columnsNext() {
   renderWizard();
 }
 
-/** Recalcula la llista de treball, les preferències i les separacions. */
+/** Recalcula la llista de treball, les preferències, les separacions i la composició. */
 function refreshRoster() {
   const built = buildRoster(W.rosterMode, W.match, A.getData().students, W.entries);
   W.roster = built.students;
   const result = buildPreferences(W.entries, W.roster);
   W.prefs = result.prefs;
   W.avoid = result.avoid;
+  W.attributes = buildAttributes(W.entries, W.roster);
   W.unresolved = result.unresolved;
   W.plan.count = Math.min(W.plan.count || defaultTeamCount(W.roster.length), Math.max(1, W.roster.length));
 }
@@ -1184,6 +1678,16 @@ function stepStudents() {
     ${separations ? `<div class="pref-card"><b>${separations}</b><span>peticions de separació</span></div>` : ''}
   </div>`;
 
+  // Què s'ha llegit de les columnes de grup d'origen, sexe i necessitats.
+  const loaded = activeAttributes(W.attributes);
+  const attributesBox = loaded.length
+    ? `<div class="pref-note"><span class="mi mi-xs">tune</span>
+        <div><b>Dades per equilibrar els equips</b>
+        <div class="pref-note-meta">${loaded.map(item =>
+          `${esc(item.attribute.label)}: ${esc(item.values.map(value => `${value.label} (${value.total})`).join(', '))}`)
+          .join(' · ')}</div></div></div>`
+    : '';
+
   const warnings = [];
   if (W.duplicates) warnings.push(`${pluralize(W.duplicates, 'fila', 'files')} ${W.duplicates === 1 ? 'repetida' : 'repetides'}: s'ha conservat la resposta més nova.`);
   if (W.nameless) warnings.push(`${pluralize(W.nameless, 'fila', 'files')} sense nom que s'han descartat.`);
@@ -1201,6 +1705,7 @@ function stepStudents() {
 
   return wizardShell(`
     ${cards}
+    ${attributesBox}
     ${warnings.map(text => `<div class="pref-note"><span class="mi mi-xs">info</span><div>${esc(text)}</div></div>`).join('')}
     <div class="field" style="margin-top:10px"><label>Què vols fer amb l'alumnat?</label></div>
     <div class="pref-options">
@@ -1273,6 +1778,20 @@ function stepPlan() {
   const teams = A.getTeams();
   const hasConstraints = (teams.constraints[REL_TOGETHER].length + teams.constraints[REL_SEPARATE].length) > 0;
 
+  // Un interruptor per a cada dada llegida del full: el docent decideix si vol
+  // repartir-la entre els equips o si aquest cop no li interessa.
+  const balanceToggles = activeAttributes(W.attributes).map(item => {
+    const detail = item.attribute.flag
+      ? `${pluralize(item.values[0].total, 'alumne')} ${item.values[0].total === 1 ? 'marcat' : 'marcats'}`
+      : item.values.map(value => `${value.label} ${value.total}`).join(' · ');
+    return `<label class="equips-toggle">
+      <input type="checkbox" ${W.balance[item.attribute.key] !== false ? 'checked' : ''}
+             data-change="prefToggleBalance" data-key="${item.attribute.key}">
+      <span>Equilibrar ${esc(item.attribute.label.toLowerCase())} entre els equips
+        <span class="pref-toggle-meta">${esc(detail)}</span></span>
+    </label>`;
+  }).join('');
+
   const remainderBox = plan.remainder > 0 ? `
     <div class="equips-remaining">
       <span class="mi mi-xs">info</span> ${pluralize(total, 'alumne')} no es reparteixen en parts iguals:
@@ -1297,6 +1816,17 @@ function stepPlan() {
       <div class="field"><label>Resultat</label><input type="text" value="${esc(describeSizes(plan.sizes, plan.leftover))}" readonly style="opacity:0.7"></div>
     </div>
     ${remainderBox}
+    <div class="field" style="margin-top:12px"><label>Criteri d'èxit</label></div>
+    <div class="pref-options">
+      ${[['max', 'Acomplir el màxim de preferències',
+          'Cada alumne coincideix amb tantes persones de la seva llista com sigui possible.'],
+         ['spread', 'Una preferència per alumne',
+          "Reparteix les tries: es busca que tothom en tingui una d'acomplerta i s'evita que uns quants se les enduguin totes i altres es quedin sense ningú."]]
+        .map(([mode, title, detail]) => `<label class="pref-option${W.criterion === mode ? ' selected' : ''}">
+          <input type="radio" name="prefCriterion" value="${mode}" ${W.criterion === mode ? 'checked' : ''} data-change="prefSetCriterion">
+          <div><b>${esc(title)}</b><span>${esc(detail)}</span></div>
+        </label>`).join('')}
+    </div>
     <label class="equips-toggle">
       <input type="checkbox" ${W.ranked ? 'checked' : ''} data-change="prefToggleRanked">
       <span>Prioritzar les primeres preferències</span>
@@ -1305,6 +1835,7 @@ function stepPlan() {
       <input type="checkbox" ${W.useAvoid ? 'checked' : ''} data-change="prefToggleAvoid">
       <span>Respectar les ${separationLabel(separations)} demanades al full</span>
     </label>` : ''}
+    ${balanceToggles}
     ${hasConstraints ? `<label class="equips-toggle">
       <input type="checkbox" ${W.useConstraints ? 'checked' : ''} data-change="prefToggleConstraints">
       <span>Respectar els conjunts d'ajuntar i separar (${constraintCount() || 0})</span>
@@ -1340,6 +1871,9 @@ function generateProposal(newSeed) {
     leftover: plan.leftover,
     ranked: W.ranked,
     constraints: currentConstraints(),
+    attributes: W.attributes,
+    balance: W.balance,
+    criterion: W.criterion,
     seed
   });
   W.attempts++;
@@ -1363,8 +1897,12 @@ function cloneProposal(proposal) {
 function rateProposal(proposal) {
   // Els indicadors sempre mostren totes les separacions llegides, encara que el
   // docent hagi decidit no aplicar-les: així es veu què s'està deixant passar.
-  proposal.stats = preferenceStats(proposal.groups, W.prefs,
-    { leftover: proposal.leftover, avoid: W.avoid });
+  proposal.stats = preferenceStats(proposal.groups, W.prefs, {
+    leftover: proposal.leftover,
+    avoid: W.avoid,
+    attributes: W.attributes,
+    criterion: W.criterion
+  });
   return proposal;
 }
 
@@ -1554,28 +2092,21 @@ function betterProposalHtml(stats) {
 
 function resultSummaryHtml() {
   const { stats, attempt, edited } = W.proposal;
-  const meta = [
-    stats.total ? `${stats.met} de ${stats.total} tries` : '',
-    stats.total ? mutualLabel(stats.mutual) : '',
-    stats.total
-      ? (stats.unhappy ? `${pluralize(stats.unhappy, 'alumne')} sense cap tria acomplerta` : 'tothom té algú de la seva llista')
-      : '',
-    stats.avoidTotal ? separationsKept(stats.avoidKept, stats.avoidTotal) : '',
-    `proposta ${attempt}${W.attempts > 1 ? ` de ${W.attempts}` : ''}${edited ? ', retocada a mà' : ''}`
-  ].filter(Boolean);
-  // Un full que només preguntava per separacions s'encapçala amb les seves xifres.
-  const headline = stats.total || !stats.avoidTotal
-    ? { label: 'Preferències acomplertes', pct: stats.pct }
-    : { label: 'Separacions respectades', pct: stats.avoidPct };
-  const value = headline.pct === null ? 0 : headline.pct;
+  const rows = criteriaList(stats);
+  // El criteri triat encapçala el resum; la resta queden a sota, amb la seva
+  // barra, perquè es vegi què s'hi guanya i què s'hi perd a cada canvi.
+  const headline = rows.find(row => row.main) || rows[0] ||
+    { label: 'Preferències acomplertes', pct: null, meta: '' };
+  const attemptMeta = `proposta ${attempt}${W.attempts > 1 ? ` de ${W.attempts}` : ''}${edited ? ', retocada a mà' : ''}`;
   return `<div class="pref-summary pref-summary-big">
       <div class="pref-summary-head">
-        <span>${headline.label}</span>
-        <b class="pref-${value >= 75 ? 'good' : value >= 40 ? 'medium' : 'bad'}">${headline.pct === null ? '—' : value + '%'}</b>
+        <span>${esc(headline.label)}</span>
+        <b class="pref-${pctTone(headline.pct)}">${headline.pct === null ? '—' : headline.pct + '%'}</b>
       </div>
       ${matchBar(headline.pct)}
-      <div class="pref-summary-meta">${meta.join(' · ')}</div>
+      <div class="pref-summary-meta">${esc(headline.meta)}${headline.meta ? ' · ' : ''}${esc(attemptMeta)}</div>
     </div>
+    ${rows.length > 1 ? criteriaHtml(stats) : ''}
     ${clashNoteHtml(stats)}
     ${W.best && proposalQuality(stats) < proposalQuality(W.best.stats) ? betterProposalHtml(stats) : ''}`;
 }
@@ -1591,6 +2122,7 @@ function resultGroupsHtml() {
         <span class="pref-chip pref-${tone}">${entry.pct === null ? '—' : entry.pct + '%'}</span>
       </div>
       <div class="pref-group-meta">${pluralize(group.length, 'alumne')}${entry.mutual ? ` · ${mutualLabel(entry.mutual)}` : ''}${entry.avoidBroken ? ` · <b class="pref-bad">${separationLabel(entry.avoidBroken)} sense respectar</b>` : ''}</div>
+      ${compositionHtml(entry)}
       ${group.map(id => memberRowHtml(id, stats)).join('')}
     </div>`;
   }).join('');
@@ -1712,8 +2244,11 @@ function writeProposal() {
     updated: formattedNow(),
     source: W.source || '',
     ranked: W.ranked !== false,
+    criterion: W.criterion === 'spread' ? 'spread' : 'max',
     prefs: JSON.parse(JSON.stringify(W.prefs)),
     avoid: JSON.parse(JSON.stringify(W.avoid || {})),
+    attributes: JSON.parse(JSON.stringify(W.attributes || {})),
+    balance: { ...W.balance },
     unresolved: W.unresolved.map(item => item.name),
     // En tornar a proposar amb les mateixes respostes, la millor versio es conserva.
     best: W.fromStored ? (teams.preferences?.best || null) : null
@@ -1741,7 +2276,8 @@ function writeProposal() {
   A.renderAll();
   setTimeout(() => A.zoomReset(), 60);
 
-  const pct = proposal.stats.pct === null ? '' : ` · ${proposal.stats.pct}% de preferències`;
+  const pct = proposal.stats.mainPct === null ? ''
+    : ` · ${proposal.stats.mainPct}% ${proposal.stats.criterion === 'spread' ? "amb una tria acomplerta" : 'de preferències'}`;
   const clashes = proposal.stats.avoidBroken ? ` · ${separationLabel(proposal.stats.avoidBroken)} sense respectar` : '';
   toast(`${pluralize(groups.length, 'equip')} ${groups.length === 1 ? 'format' : 'formats'}${pct}${clashes}`, 'success');
   W = null;
@@ -1764,7 +2300,7 @@ A.registerActions({
     renderWizard();
   },
   prefToggleHeader: node => toggleHeader(node.checked),
-  prefSetColumn: node => setColumn(node.dataset.role, parseInt(node.dataset.idx, 10), node.value),
+  prefSetColumn: node => setColumn(node.dataset.role, parseInt(node.dataset.idx, 10), node.value, node.dataset.key),
   prefAddColumn: () => { W.mapping.prefs.push(-1); renderWizard(); },
   prefAddAvoidColumn: () => { W.mapping.avoid.push(-1); renderWizard(); },
   prefColumnsNext: () => columnsNext(),
@@ -1777,6 +2313,9 @@ A.registerActions({
   prefToggleRanked: node => { W.ranked = node.checked; },
   prefToggleAvoid: node => { W.useAvoid = node.checked; renderWizard(); },
   prefToggleConstraints: node => { W.useConstraints = node.checked; renderWizard(); },
+  prefSetCriterion: node => { W.criterion = node.value === 'spread' ? 'spread' : 'max'; renderWizard(); },
+  prefToggleBalance: node => { W.balance[node.dataset.key] = node.checked; renderWizard(); },
+  prefToggleCriteria: node => { criteriaOpen = !node.closest('details')?.open; },
   prefGenerate: () => generateProposal(),
   prefGenerateAgain: () => generateProposal(),
   prefRestoreBest: () => restoreBest(),
@@ -1788,8 +2327,11 @@ A.registerActions({
 Object.assign(A, {
   normalizeNameText, nameKey, buildNameIndex, resolveName,
   looksLikeHeader, autoMapping, columnLabels, emptyColumns, readEntries, matchRoster,
-  buildRoster, buildPreferences, planPreferenceSizes, describeSizes, avoidLinks,
-  preferenceWeights, optimizePreferenceGroups, preferenceStats, matchTone,
+  buildRoster, buildPreferences, buildAttributes, attributeValues, activeAttributes,
+  planPreferenceSizes, describeSizes, avoidLinks,
+  preferenceWeights, preferenceModel, groupScore, optimizePreferenceGroups,
+  preferenceStats, balanceStats, balanceAverage, matchTone, criteriaList,
+  ATTRIBUTES, ATTRIBUTE_KEYS, attributeByKey,
   preferenceTeamView, renderPreferencePanel, restoreFormation, startPreferenceWizard: startWizard
 });
 

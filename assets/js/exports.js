@@ -280,20 +280,41 @@ function exportSeatingCsv() {
   downloadCsv(rows, `aulamap_distribucio_${fileStamp()}.csv`);
 }
 
-function exportTeamsCsv() {
+/**
+ * Una fila per alumne amb el seu equip. Si el grup ve d'un full de
+ * preferències, cada fila porta també el recompte de tries i separacions i les
+ * dades de composició que s'hagin carregat (grup d'origen, sexe, necessitats).
+ * @param {{competency?:boolean}} options
+ */
+function exportTeamsCsv(options = {}) {
   const teams = A.getTeams();
   if (!teams.groups?.length) { toast('No hi ha equips formats', 'error'); return; }
-  // Si el grup ve d'un full de preferencies, cada alumne en porta el recompte.
-  const stats = teams.preferences
-    ? A.preferenceStats(teams.groups, teams.preferences.prefs, { avoid: teams.preferences.avoid })
+  const preferences = teams.preferences;
+  const stats = preferences
+    ? A.preferenceStats(teams.groups, preferences.prefs, {
+        avoid: preferences.avoid, attributes: preferences.attributes, criterion: preferences.criterion
+      })
     : null;
-  const rows = [stats
-    ? ['equip', 'alumne', 'nivell', 'preferencies acomplertes', 'preferencies indicades',
-       'separacions demanades', 'separacions sense respectar']
-    : ['equip', 'alumne', 'nivell']];
+  const withCompetency = options.competency !== false;
+  const attributes = (A.ATTRIBUTES || [])
+    .filter(attribute => preferences?.attributes?.[attribute.key])
+    .map(attribute => ({ key: attribute.key, label: attribute.short.toLowerCase(),
+                         values: preferences.attributes[attribute.key] }));
+
+  const header = ['equip', 'alumne'];
+  if (withCompetency) header.push('nivell');
+  attributes.forEach(attribute => header.push(attribute.label));
+  if (stats) {
+    header.push('preferencies acomplertes', 'preferencies indicades',
+                'separacions demanades', 'separacions sense respectar');
+  }
+
+  const rows = [header];
   teams.groups.forEach((group, index) => {
     group.forEach(id => {
-      const row = [A.teamName(index), A.studentName(id), A.competencyOf(id)];
+      const row = [A.teamName(index), A.studentName(id)];
+      if (withCompetency) row.push(A.competencyOf(id));
+      attributes.forEach(attribute => row.push(attribute.values[id] || ''));
       const entry = stats && stats.perStudent[id];
       if (stats) {
         row.push(entry?.met ?? 0, entry?.total ?? 0, entry?.avoidTotal ?? 0, entry?.avoidBroken ?? 0);
@@ -388,7 +409,8 @@ A.registerActions({
 
 Object.assign(A, {
   downloadBlob, fileStamp, saveToFile, loadFromFile, adoptImportedData,
-  csvFrom, parseCsvLine, parseCsvTable, detectCsvSeparator, importCsvText, exportPDF
+  csvFrom, parseCsvLine, parseCsvTable, detectCsvSeparator, importCsvText,
+  exportStudentsCsv, exportSeatingCsv, exportTeamsCsv, exportPDF
 });
 
 })(window.AulaMap);

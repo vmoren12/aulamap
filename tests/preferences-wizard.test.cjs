@@ -660,6 +660,118 @@ test('a sheet with separations only and no choices is enough to form teams', () 
   assert.match(view.summary, /100%/);
 });
 
+/** Full amb grup d'origen, sexe i necessitats educatives a les columnes 2, 3 i 4. */
+const FULL_SHEET = [
+  'Nom i cognoms;Grup actual;Sexe;NEE;Preferència 1;Preferència 2',
+  'Anna Puig Solà;Aire;D;;Pau Serra Vidal;Nil Roca Camps',
+  'Pau Serra Vidal;Terra;H;S;Anna Puig Solà;Nil Roca Camps',
+  'Nil Roca Camps;Aire;H;;Pau Serra Vidal;Anna Puig Solà',
+  'Jana Ferrer Mas;Terra;D;;Ona Camps Roig;Anna Puig Solà',
+  'Lluc Vidal Pons;Aire;H;S;Ona Camps Roig;Nil Roca Camps',
+  'Ona Camps Roig;Terra;D;;Lluc Vidal Pons;Jana Ferrer Mas',
+  'Marta Gil Puig;Terra;D;;Jana Ferrer Mas;Ona Camps Roig'
+].join('\r\n');
+
+test('the wizard maps the composition columns and says what it has read', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = FULL_SHEET;
+  helper.run('prefReadSource');
+
+  const columns = helper.lastModal();
+  assert.match(columns, /Grup d'origen/);
+  assert.match(columns, /Necessitats educatives/);
+  assert.match(columns, /pref-col-attr/, 'les columnes de composició queden destacades');
+
+  helper.run('prefColumnsNext');
+  const students = helper.lastModal();
+  assert.match(students, /Dades per equilibrar els equips/);
+  assert.match(students, /Aire \(3\)/);
+  assert.match(students, /Necessitats educatives: NEE \(2\)/);
+});
+
+test('the teacher can say which column holds which data', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  // Sense capçalera reconeixible no s'endevina res: tot s'assigna a mà.
+  helper.node('prefText').value = [
+    'Anna Puig Solà;X;D;Pau Serra Vidal',
+    'Pau Serra Vidal;Y;H;Anna Puig Solà',
+    'Nil Roca Camps;X;H;Pau Serra Vidal',
+    'Jana Ferrer Mas;Y;D;Anna Puig Solà'
+  ].join('\r\n');
+  helper.run('prefReadSource');
+  helper.run('prefSetColumn', { role: 'name' }, { value: '0' });
+  helper.run('prefSetColumn', { role: 'attr', key: 'group' }, { value: '1' });
+  helper.run('prefSetColumn', { role: 'attr', key: 'sex' }, { value: '2' });
+  helper.run('prefSetColumn', { role: 'pref', idx: '0' }, { value: '3' });
+  helper.run('prefSetColumn', { role: 'pref', idx: '1' }, { value: '-1' });
+  helper.run('prefSetColumn', { role: 'pref', idx: '2' }, { value: '-1' });
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+
+  const plan = helper.lastModal();
+  assert.match(plan, /Equilibrar grup d'origen/);
+  assert.match(plan, /Equilibrar sexe/);
+  assert.doesNotMatch(plan, /Equilibrar necessitats/, 'la columna de NEE no s\'ha assignat');
+
+  helper.run('prefGenerate');
+  helper.run('prefApply');
+  const preferences = helper.data.teams.preferences;
+  assert.deepEqual(Object.keys(preferences.attributes).sort(), ['group', 'sex']);
+  const teamOf = id => helper.data.teams.groups.findIndex(group => group.includes(id));
+  const idOf = name => helper.data.students.find(student => student.name === name).id;
+  assert.notEqual(teamOf(idOf('Anna Puig Solà')), teamOf(idOf('Jana Ferrer Mas')),
+    'les dues noies del mateix full es reparteixen');
+});
+
+test('the success criterion is chosen before generating and travels with the sheet', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = FULL_SHEET;
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+  helper.run('prefSetCriterion', {}, { value: 'spread' });
+  assert.match(helper.lastModal(), /Una preferència per alumne/);
+
+  helper.run('prefSetPlanValue', {}, { value: '3' });
+  helper.run('prefGenerate');
+  const proposal = helper.lastModal();
+  assert.match(proposal, /Amb una sola tria acomplerta/);
+  assert.match(proposal, /Equilibri · Sexe/, 'els criteris d\'equilibri també hi surten');
+
+  helper.run('prefApply');
+  const preferences = helper.data.teams.preferences;
+  assert.equal(preferences.criterion, 'spread');
+  assert.ok(preferences.attributes.group, 'el grup d\'origen es desa amb les respostes');
+  assert.ok(preferences.attributes.nee);
+
+  // I en tornar a proposar, el criteri i les dades ja hi són.
+  helper.run('prefRegenerate');
+  assert.match(helper.lastModal(), /Equilibrar grup d'origen/);
+});
+
+test('the side panel shows the achievement of every criterion', () => {
+  const helper = setupWizard(CLASS);
+  helper.run('startPreferenceWizard');
+  helper.node('prefText').value = FULL_SHEET;
+  helper.run('prefReadSource');
+  helper.run('prefColumnsNext');
+  helper.run('prefStudentsNext');
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  helper.run('prefGenerate');
+  helper.run('prefApply');
+
+  const view = helper.A.preferenceTeamView(helper.data.teams.groups);
+  assert.match(view.summary, /Grau d'assoliment de cada criteri/);
+  assert.match(view.summary, /Equilibri · Grup d'origen/);
+  assert.match(view.summary, /Equilibri · Necessitats educatives/);
+  assert.match(view.composition(0), /pref-compo/);
+  assert.match(view.composition(0), /Grup/);
+});
+
 test('a step with neither choices nor separations will not move on', () => {
   const helper = setupWizard(CLASS);
   helper.run('startPreferenceWizard');

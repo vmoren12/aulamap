@@ -18,8 +18,10 @@ function defaultTeamsData() {
     useCompetency: false,
     heterogeneous: false,
     competencies: {},             // { studentId: 0..10 }
-    preferences: null,            // { updated, source, ranked, prefs:{ studentId:[studentId] },
-                                  //   avoid:{ studentId:[studentId] }, unresolved:[] }
+    preferences: null,            // { updated, source, ranked, criterion, prefs:{ studentId:[studentId] },
+                                  //   avoid:{ studentId:[studentId] }, unresolved:[],
+                                  //   attributes:{ group|sex|nee: { studentId: valor } },
+                                  //   balance:{ group|sex|nee: boolean } }
     constraints: { together: [], separate: [] }, // [{ id, students:[studentId] }]
     groups: null,                 // [[studentId]]
     teamNames: {},                // { teamIndex: nom }
@@ -92,7 +94,26 @@ function normalizePreferences(preferences, validIds) {
   };
   const prefs = links(preferences.prefs);
   const avoid = links(preferences.avoid);
-  if (!Object.keys(prefs).length && !Object.keys(avoid).length) return null;
+
+  // Grup d'origen, sexe i necessitats educatives: un text curt per alumne.
+  const attributes = {};
+  ['group', 'sex', 'nee'].forEach(key => {
+    const source = preferences.attributes?.[key];
+    if (!source || typeof source !== 'object') return;
+    const clean = {};
+    Object.entries(source).forEach(([studentId, value]) => {
+      const text = String(value ?? '').trim();
+      if (validIds.has(studentId) && text) clean[studentId] = text.slice(0, 40);
+    });
+    if (Object.keys(clean).length) attributes[key] = clean;
+  });
+  const balance = {};
+  ['group', 'sex', 'nee'].forEach(key => {
+    if (preferences.balance && preferences.balance[key] === false) balance[key] = false;
+  });
+
+  // Un full només amb la composició del grup també val: encara es pot equilibrar.
+  if (!Object.keys(prefs).length && !Object.keys(avoid).length && !Object.keys(attributes).length) return null;
 
   let best = null;
   const storedGroups = preferences.best?.groups;
@@ -105,6 +126,8 @@ function normalizePreferences(preferences, validIds) {
         groups,
         pct: Number(preferences.best.pct) || 0,
         broken: Number(preferences.best.broken) || 0,
+        balance: Number.isFinite(Number(preferences.best.balance)) && preferences.best.balance !== null
+          ? Number(preferences.best.balance) : null,
         updated: preferences.best.updated || ''
       };
     }
@@ -114,8 +137,11 @@ function normalizePreferences(preferences, validIds) {
     updated: preferences.updated || '',
     source: preferences.source || '',
     ranked: preferences.ranked !== false,
+    criterion: preferences.criterion === 'spread' ? 'spread' : 'max',
     prefs,
     avoid,
+    attributes,
+    balance,
     unresolved: Array.isArray(preferences.unresolved) ? preferences.unresolved.map(String) : [],
     best
   };
