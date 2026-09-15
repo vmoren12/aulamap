@@ -1242,6 +1242,11 @@ function storedQuality(best) {
                       best.none);
 }
 
+/** Què vol dir el percentatge que encapçala els indicadors de cada criteri. */
+function criterionLabel(criterion) {
+  return criterion === 'spread' ? 'amb una sola tria acomplerta' : 'de preferències acomplertes';
+}
+
 /** "3 separacions" / "1 separació". */
 function separationLabel(count) {
   return `${count} ${count === 1 ? 'separació' : 'separacions'}`;
@@ -1525,7 +1530,7 @@ function restoreFormation() {
     if (A.view.current !== 'equips') A.switchCanvasView('equips');
     A.renderAll();
     setTimeout(() => A.zoomReset(), 60);
-    toast(`Versió recuperada · ${stored.best.pct}% de preferències`, 'success');
+    toast(`Versió recuperada · ${stored.best.pct}% ${criterionLabel(stored.criterion)}`, 'success');
   };
   if (A.guardUnsavedTeams) A.guardUnsavedTeams(write);
   else write();
@@ -1568,7 +1573,7 @@ function renderPreferencePanel() {
         <button class="btn btn-sm btn-danger" data-action="prefForget" title="Esborrar les preferències carregades"><span class="mi mi-xs">delete</span></button>
       </div>
       ${canRestore ? `<button class="btn btn-sm pref-restore" data-action="prefRestoreFormation"
-        title="${esc(`Equips del ${best.updated} amb el ${best.pct}% de preferències acomplertes${best.broken ? ` i ${separationLabel(best.broken)} sense respectar` : ''}`)}">
+        title="${esc(`Equips del ${best.updated} amb el ${best.pct}% ${criterionLabel(stored.criterion)}${best.none ? ` però ${pluralize(best.none, 'alumne')} sense cap tria` : ''}${best.broken ? ` i ${separationLabel(best.broken)} sense respectar` : ''}`)}">
         <span class="mi mi-xs">history</span> Recuperar la millor versió (${best.pct}%)</button>` : ''}
     </div>`;
 }
@@ -2430,13 +2435,35 @@ function clashNoteHtml(stats) {
 /** Com es ven la millor proposta desada quan la d'ara no hi arriba. */
 function betterProposalHtml(stats) {
   const best = W.best.stats;
-  const fewer = best.avoidBroken < stats.avoidBroken
-    ? (best.avoidBroken
-        ? ` i només ${separationLabel(best.avoidBroken)} sense respectar`
-        : ' i totes les separacions respectades')
-    : '';
+  const reasons = [];
+  // La xifra que es compara és la del criteri triat, la mateixa que encapçala
+  // el resum: si no, l'avís diria un número que no es veu enlloc.
+  if (best.criterion === 'spread' && best.unhappy < stats.unhappy) {
+    reasons.push(best.unhappy
+      ? `hi deixa ${pluralize(best.unhappy, 'alumne')} sense cap tria en comptes de ${stats.unhappy}`
+      : 'no hi deixa ningú sense cap tria');
+  }
+  if (best.avoidBroken < stats.avoidBroken) {
+    reasons.push(best.avoidBroken
+      ? `només hi trenca ${separationLabel(best.avoidBroken)}`
+      : 'hi respecta totes les separacions');
+  }
+  const bestBalance = balanceAverage(best.balance);
+  const nowBalance = balanceAverage(stats.balance);
+  if (bestBalance !== null && nowBalance !== null && bestBalance > nowBalance) {
+    reasons.push(`hi equilibra millor els equips (${bestBalance}% contra ${nowBalance}%)`);
+  }
+
+  const value = best.mainPct === null ? 0 : best.mainPct;
+  const now = stats.mainPct === null ? 0 : stats.mainPct;
+  // Una proposta pot ser millor sense guanyar en percentatge: quan passa, es
+  // diu en què guanya, perquè el número tot sol semblaria un error.
+  const headline = value > now
+    ? `La millor proposta arriba al <b>${value}%</b>${reasons.length ? ` i ${reasons.join(', ')}` : ''}`
+    : `Una proposta anterior es queda ${value === now ? 'al mateix' : 'al'} <b>${value}%</b>, però ${
+        reasons.join(', ') || 'en conjunt surt més ben parada'}`;
   return `<div class="pref-note pref-note-warn"><span class="mi mi-xs">history</span>
-      <div>La millor proposta arriba al <b>${best.pct === null ? 0 : best.pct}%</b>${fewer}.
+      <div>${headline}.
       <button class="btn btn-sm" data-action="prefRestoreBest" style="margin-left:6px">Recuperar-la</button></div></div>`;
 }
 
@@ -2603,8 +2630,12 @@ function writeProposal() {
     levelRange: { ...W.levelRange },
     balance: { ...W.balance },
     unresolved: W.unresolved.map(item => item.name),
-    // En tornar a proposar amb les mateixes respostes, la millor versio es conserva.
-    best: W.fromStored ? (teams.preferences?.best || null) : null
+    // En tornar a proposar amb les mateixes respostes, la millor versió es
+    // conserva, però només mentre el criteri no canviï: amb un altre criteri el
+    // seu percentatge voldria dir una altra cosa.
+    best: W.fromStored && teams.preferences?.criterion === W.criterion
+      ? (teams.preferences.best || null)
+      : null
   };
   teams.groups = groups;
   teams.teamNames = {};
@@ -2641,7 +2672,7 @@ function writeProposal() {
   setTimeout(() => A.zoomReset(), 60);
 
   const pct = proposal.stats.mainPct === null ? ''
-    : ` · ${proposal.stats.mainPct}% ${proposal.stats.criterion === 'spread' ? "amb una tria acomplerta" : 'de preferències'}`;
+    : ` · ${proposal.stats.mainPct}% ${criterionLabel(proposal.stats.criterion)}`;
   const clashes = proposal.stats.avoidBroken ? ` · ${separationLabel(proposal.stats.avoidBroken)} sense respectar` : '';
   toast(`${pluralize(groups.length, 'equip')} ${groups.length === 1 ? 'format' : 'formats'}${pct}${clashes}`, 'success');
   W = null;
@@ -2677,12 +2708,18 @@ A.registerActions({
   prefToggleRanked: node => { W.ranked = node.checked; },
   prefToggleAvoid: node => { W.useAvoid = node.checked; renderWizard(); },
   prefToggleConstraints: node => { W.useConstraints = node.checked; renderWizard(); },
-  prefSetCriterion: node => { W.criterion = node.value === 'spread' ? 'spread' : 'max'; renderWizard(); },
+  prefSetCriterion: node => {
+    const value = node.value === 'spread' ? 'spread' : 'max';
+    // Els percentatges de dos criteris no es poden comparar: en canviar-lo, la
+    // millor proposta de l'anterior deixa de servir de referència.
+    if (value !== W.criterion) { W.criterion = value; W.best = null; }
+    renderWizard();
+  },
   prefToggleBalance: node => { W.balance[node.dataset.key] = node.checked; renderWizard(); },
   prefSetLevelRange: node => setLevelRange(node.dataset.key, node.value),
   prefToggleCriteria: node => { criteriaOpen = !node.closest('details')?.open; },
-  prefGenerate: () => generateProposal(),
-  prefGenerateAgain: () => generateProposal(),
+  prefGenerate: node => A.runBusy(node, 'Formant equips…', () => generateProposal()),
+  prefGenerateAgain: node => A.runBusy(node, 'Provant-ho…', () => generateProposal()),
   prefRestoreBest: () => restoreBest(),
   prefPick: node => pickMember(node.dataset.sid),
   prefDropOn: node => dropOnTeam(parseInt(node.dataset.team, 10)),

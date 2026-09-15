@@ -46,6 +46,8 @@ function setupWizard(names) {
     toast: (message, kind) => calls.toast.push([message, kind]),
     openModal: html => calls.modals.push(html),
     closeModal() {}, focusModalField() {}, appConfirm: (t, m, run) => run(),
+    // El nucli deixa el botó en espera mentre dura la feina; aquí no cal esperar.
+    runBusy: (button, label, work) => work(),
     registerActions: map => Object.assign(A.actions, map),
     actions: {},
     getData: () => entry.configurations[entry.currentConfig].data,
@@ -836,6 +838,65 @@ test('when it is impossible, the proposal says who has been left out', () => {
   assert.match(proposal, /1 alumne sense cap tria acomplerta/);
   assert.match(proposal, /Nil Roca Camps/);
   assert.match(proposal, /pref-member-none/, "el nom queda marcat a la seva targeta");
+});
+
+/** Titular i avís de la millor proposta, tal com es pinten al pas final. */
+function summaryOf(html) {
+  const head = /<div class="pref-summary-head">\s*<span>([^<]*)<\/span>\s*<b class="pref-\w+">([^<]*)</.exec(html);
+  const notice = /pref-note-warn"><span class="mi mi-xs">history<\/span>\s*<div>([\s\S]*?)\.\s*<button/.exec(html);
+  return {
+    label: head ? head[1].trim() : '',
+    pct: head ? parseInt(head[2], 10) : null,
+    notice: notice ? notice[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null
+  };
+}
+
+test('the best proposal notice quotes the figure of the chosen criterion', () => {
+  // El full d'exemple del repositori: prou gran perquè les propostes surtin
+  // desiguals i l'avís tingui ocasió d'aparèixer.
+  const sheet = readFileSync(path.join(root, 'exemples/preferencies-30-alumnes-complet.csv'), 'utf8');
+  for (const criterion of ['max', 'spread']) {
+    const helper = setupWizard([]);
+    helper.run('startPreferenceWizard');
+    helper.node('prefText').value = sheet;
+    helper.run('prefReadSource');
+    helper.run('prefColumnsNext');
+    helper.run('prefStudentsNext');
+    helper.run('prefSetCriterion', {}, { value: criterion });
+    helper.run('prefSetPlanMode', { value: 'size' });
+    helper.run('prefSetPlanValue', {}, { value: '5' });
+
+    const seen = [];
+    let checked = 0;
+    for (let round = 0; round < 8; round++) {
+      helper.run(round ? 'prefGenerateAgain' : 'prefGenerate');
+      const summary = summaryOf(helper.lastModal());
+      if (summary.notice) {
+        const quoted = parseInt(/(\d+)%/.exec(summary.notice)[1], 10);
+        assert.ok(seen.includes(quoted),
+          `l'avís diu ${quoted}%, que no és cap dels titulars vistos (${seen.join(', ')})`);
+        assert.ok(quoted >= summary.pct,
+          `la millor proposta (${quoted}%) no pot anar per sota de la d'ara (${summary.pct}%)`);
+        checked++;
+      }
+      seen.push(summary.pct);
+    }
+    // El full de proves dóna propostes desiguals: l'avís ha de sortir alguna vegada.
+    assert.ok(checked > 0, `amb el criteri ${criterion} no s'ha arribat a veure cap avís`);
+  }
+});
+
+test('changing the criterion forgets the best proposal of the previous one', () => {
+  const helper = setupWizard(CLASS);
+  openSheet(helper, 'merge');
+  helper.run('prefSetPlanValue', {}, { value: '2' });
+  for (let round = 0; round < 6; round++) helper.run(round ? 'prefGenerateAgain' : 'prefGenerate');
+
+  helper.run('prefBack', { step: '4' });
+  helper.run('prefSetCriterion', {}, { value: 'spread' });
+  helper.run('prefGenerate');
+  assert.equal(summaryOf(helper.lastModal()).notice, null,
+    'la millor proposta de l\'altre criteri ja no serveix de referència');
 });
 
 test('the side panel shows the achievement of every criterion', () => {

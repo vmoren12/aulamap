@@ -47,7 +47,10 @@ function setup() {
     pluralize: (n, s, p) => `${n} ${n === 1 ? s : (p || s + 's')}`,
     initialOf: name => String(name)[0], toast() {},
     openModal: html => calls.modals.push(html), closeModal() {}, focusModalField() {}, appConfirm() {},
-    openStudentPicker() {}, registerActions: map => Object.assign(A.actions, map), actions: {},
+    openStudentPicker() {},
+    // El nucli deixa el botó en espera mentre dura la feina; aquí no cal esperar.
+    runBusy: (button, label, work) => work(),
+    registerActions: map => Object.assign(A.actions, map), actions: {},
     shuffleArray: list => list,
     getData: () => data, getTeams: () => data.teams,
     studentName: id => students.find(student => student.id === id).name,

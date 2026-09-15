@@ -316,7 +316,7 @@ function createTeamsFromFab() {
 A.registerActions({
   teamMove: (node, event) => onTeamMoveStart(event, +node.dataset.idx),
   arrangeTeamDesks: () => autoArrangeTeamDesks(),
-  createTeamsFromFab: () => createTeamsFromFab(),
+  createTeamsFromFab: node => A.runBusy(node, 'Formant equips…', () => createTeamsFromFab()),
   moveSelectedTeam: node => {
     const index = parseInt(node.value, 10);
     node.value = '';

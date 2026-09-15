@@ -57,6 +57,82 @@ test('the modules expose the namespace instead of global functions', () => {
   }
 });
 
+/* ── Senyal d'espera dels botons ─────────────────────── */
+
+/** Només el nucli, amb les passades de pintat a la mà. */
+function loadCoreWithFrames() {
+  const frames = [];
+  const context = vm.createContext({
+    window: { AulaMap: {}, addEventListener() {} },
+    document: { addEventListener() {} },
+    requestAnimationFrame: fn => frames.push(fn),
+    console, setTimeout: () => {}
+  });
+  vm.runInContext(readFileSync(path.join(root, 'assets/js/core.js'), 'utf8'), context);
+  return { A: vm.runInContext('window.AulaMap', context), frames };
+}
+
+/** Botó de mentida amb el mínim que llegeix runBusy. */
+function fakeButton() {
+  const classes = new Set();
+  const attributes = new Map();
+  return {
+    innerHTML: '<span>Formar equips</span>', disabled: false, isConnected: true,
+    classList: {
+      add: name => classes.add(name),
+      remove: name => classes.delete(name),
+      contains: name => classes.has(name)
+    },
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: name => attributes.delete(name),
+    getAttribute: name => attributes.get(name) ?? null
+  };
+}
+
+test('a long job leaves the button waiting and gives it back afterwards', () => {
+  const { A, frames } = loadCoreWithFrames();
+  const button = fakeButton();
+  const original = button.innerHTML;
+  let seen = null;
+
+  A.runBusy(button, 'Formant equips…', () => {
+    seen = { html: button.innerHTML, disabled: button.disabled };
+  });
+  assert.equal(button.disabled, true, 'el botó queda desactivat de seguida');
+  assert.ok(button.classList.contains('is-busy'));
+  assert.equal(button.getAttribute('aria-busy'), 'true');
+  assert.match(button.innerHTML, /btn-spinner/);
+  assert.match(button.innerHTML, /Formant equips…/);
+  assert.equal(seen, null, 'la feina espera que el canvi es pinti');
+
+  frames.shift()();
+  assert.equal(seen, null, 'encara no: calen dues passades de pintat');
+  frames.shift()();
+  assert.equal(seen.disabled, true, 'la feina es fa amb el botó ocupat');
+  assert.match(seen.html, /btn-spinner/);
+  assert.equal(button.innerHTML, original, 'i el botó torna com era');
+  assert.equal(button.disabled, false);
+  assert.equal(button.classList.contains('is-busy'), false);
+  assert.equal(button.getAttribute('aria-busy'), null);
+});
+
+test('a button that is gone when the job ends is left alone', () => {
+  const { A, frames } = loadCoreWithFrames();
+  const button = fakeButton();
+  // Els modals es repinten sencers: el botó premut ja no és a la pàgina.
+  A.runBusy(button, 'Provant-ho…', () => { button.isConnected = false; });
+  frames.shift()();
+  frames.shift()();
+  assert.match(button.innerHTML, /Provant-ho…/, 'no es toca res del que ja no hi és');
+});
+
+test('without a browser the job runs right away', () => {
+  const A = loadNamespace();
+  let done = false;
+  A.runBusy(null, 'Formant equips…', () => { done = true; });
+  assert.equal(done, true);
+});
+
 test('the interface keeps no inline event handlers', () => {
   const html = readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.doesNotMatch(html, /\son[a-z]+="/, 'index.html no ha de tenir atributs on*');

@@ -1156,7 +1156,7 @@ A.registerActions({
   teamRemoveStudentFromSet: node => teamRemoveStudentFromSet(node.dataset.type, node.dataset.set, node.dataset.sid),
   teamAddMultiple: node => teamAddMultiple(node.dataset.type, node.dataset.set),
   copyRelationsToTeams: () => copyRelationsToTeams(),
-  createTeams: () => createTeams(),
+  createTeams: node => A.runBusy(node, 'Formant equips…', () => createTeams()),
   renameTeam: node => startRenameTeam(+node.dataset.idx, node),
   toggleTeamLock: node => toggleTeamLock(+node.dataset.idx),
   toggleStudentLock: node => toggleStudentLock(node.dataset.sid, +node.dataset.idx),

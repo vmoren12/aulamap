@@ -125,6 +125,43 @@ function initActionDelegation() {
   });
 }
 
+/**
+ * Feina llarga amb el botó que l'ha engegada fent de senyal d'espera.
+ *
+ * Formar equips bloqueja el fil una estona llarga (pot arribar al segon i mig
+ * en una classe gran), i sense cap senyal sembla que el clic no hagi anat
+ * enlloc. El botó es deshabilita i mostra el text d'espera, es deixa pintar el
+ * canvi i només llavors es fa la feina. Si el botó ja no hi és quan s'acaba
+ * (els modals es repinten sencers), no cal desfer res.
+ *
+ * @param {HTMLElement|null} button botó que s'ha premut
+ * @param {string} label text mentre dura la feina
+ * @param {Function} work feina a fer
+ */
+function runBusy(button, label, work) {
+  // Sense navegador (proves) no hi ha res a pintar: la feina es fa i prou.
+  if (!button || typeof requestAnimationFrame !== 'function') { work(); return; }
+  const original = button.innerHTML;
+  const wasDisabled = button.disabled;
+  button.disabled = true;
+  button.classList.add('is-busy');
+  button.setAttribute('aria-busy', 'true');
+  button.innerHTML = `<span class="btn-spinner"></span> ${esc(label)}`;
+  // Dues passades: la primera aplica els canvis, la segona ja els ha pintat.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    try {
+      work();
+    } finally {
+      if (button.isConnected) {
+        button.disabled = wasDisabled;
+        button.classList.remove('is-busy');
+        button.removeAttribute('aria-busy');
+        button.innerHTML = original;
+      }
+    }
+  }));
+}
+
 /* ── Modals i notificacions ──────────────────────────── */
 
 function openModal(html) {
@@ -260,7 +297,7 @@ Object.assign(A, {
   APP_VERSION, STORAGE_KEY, THEME_KEY, LEGACY_KEYS, DESK_W, DESK_H, COLORS, TEAM_COLORS,
   REL_TOGETHER, REL_SEPARATE, REL_LABEL, flags,
   el, esc, uid, isMobile, initialOf, pluralize,
-  registerActions, runAction, actionNames, initActionDelegation,
+  registerActions, runAction, actionNames, initActionDelegation, runBusy,
   openModal, closeModal, isModalOpen, focusModalField, toast, appConfirm, openStudentPicker
 });
 

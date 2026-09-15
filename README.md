@@ -148,7 +148,13 @@ Passa un formulari on cada alumne escriu el seu nom i amb qui voldria treballar,
   haver de tornar a importar el full.
 - L'aplicació recorda la **millor formació carregada** i, si després de fer proves el
   repartiment d'ara n'acompleix menys, ofereix **recuperar-la** amb un botó que en diu el
-  percentatge. La memòria es manté mentre es treballa amb les mateixes respostes.
+  percentatge —sempre el del criteri triat— i, quan guanya sense guanyar-hi en
+  percentatge, **en què guanya** (ningú sense tria, separacions respectades, equips més
+  equilibrats). La memòria es manté mentre es treballa amb les mateixes respostes i amb
+  el mateix criteri: si es canvia el criteri, els percentatges deixen de ser comparables
+  i es comença de nou.
+- Formar equips d'una classe sencera dura un moment: mentre hi treballa, el botó que
+  s'ha premut queda **en espera**, amb el seu indicador, i no s'hi pot tornar a clicar.
 
 - En **exportar els equips** es tria el format: **text** (la llista per llegir o
   imprimir, amb el grau de cada criteri i la composició de cada equip) o **CSV** (una
